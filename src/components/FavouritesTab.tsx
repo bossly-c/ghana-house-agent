@@ -19,6 +19,7 @@ interface FavProperty {
   bathrooms: number;
 }
 
+/* ── Hook ── */
 function useFavourites() {
   const getIds = (): string[] => {
     try {
@@ -32,7 +33,6 @@ function useFavourites() {
 
   useEffect(() => {
     setIds(getIds());
-    // Re-sync when storage changes (cross-tab)
     const onStorage = () => setIds(getIds());
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
@@ -52,10 +52,14 @@ function useFavourites() {
   return { ids, toggle, isFav };
 }
 
-// Export the hook so other components can use it
 export { useFavourites };
 
-export default function FavouritesTab() {
+/* ── Props — onSelect is optional so existing usages without it still compile ── */
+interface Props {
+  onSelect?: (id: string) => void;
+}
+
+export default function FavouritesTab({ onSelect }: Props) {
   const { ids, toggle, isFav } = useFavourites();
   const [properties, setProperties] = useState<FavProperty[]>([]);
   const [loading, setLoading]       = useState(false);
@@ -65,7 +69,6 @@ export default function FavouritesTab() {
     if (ids.length === 0) { setProperties([]); return; }
     setLoading(true);
     try {
-      // Fetch each property — could be improved with a batch endpoint later
       const results = await Promise.allSettled(
         ids.map((id) => fetch(`/api/properties/${id}`).then((r) => r.json()))
       );
@@ -105,13 +108,9 @@ export default function FavouritesTab() {
         >
           Saved Homes
         </h1>
-        {/* Search */}
         <div
           className="flex items-center gap-2 rounded-2xl px-4 py-2.5"
-          style={{
-            background: "var(--surface)",
-            border:     "1px solid var(--border-col)",
-          }}
+          style={{ background: "var(--surface)", border: "1px solid var(--border-col)" }}
         >
           <Search size={16} style={{ color: "var(--text-muted)" }} />
           <input
@@ -167,32 +166,43 @@ export default function FavouritesTab() {
               <div
                 key={p.id}
                 className="rounded-2xl overflow-hidden flex"
-                style={{
-                  background: "var(--surface)",
-                  border:     "1px solid var(--border-col)",
-                }}
+                style={{ background: "var(--surface)", border: "1px solid var(--border-col)" }}
               >
-                {/* Image */}
-                <Link href={`/property/${p.id}`} className="shrink-0">
-                  <div
-                    className="w-28 h-28 flex items-center justify-center"
-                    style={{ background: "var(--surface-2)" }}
+                {/* Image — tapping opens on map if onSelect provided, else goes to detail page */}
+                {onSelect ? (
+                  <button
+                    type="button"
+                    onClick={() => onSelect(p.id)}
+                    className="shrink-0"
                   >
-                    {img ? (
-                      <img
-                        src={img}
-                        className="w-full h-full object-cover"
-                        alt={p.title}
-                      />
-                    ) : (
-                      <MapPin size={28} style={{ color: "var(--border-col)" }} />
-                    )}
-                  </div>
-                </Link>
+                    <div
+                      className="w-28 h-28 flex items-center justify-center"
+                      style={{ background: "var(--surface-2)" }}
+                    >
+                      {img ? (
+                        <img src={img} className="w-full h-full object-cover" alt={p.title} />
+                      ) : (
+                        <MapPin size={28} style={{ color: "var(--border-col)" }} />
+                      )}
+                    </div>
+                  </button>
+                ) : (
+                  <Link href={`/property/${p.id}`} className="shrink-0">
+                    <div
+                      className="w-28 h-28 flex items-center justify-center"
+                      style={{ background: "var(--surface-2)" }}
+                    >
+                      {img ? (
+                        <img src={img} className="w-full h-full object-cover" alt={p.title} />
+                      ) : (
+                        <MapPin size={28} style={{ color: "var(--border-col)" }} />
+                      )}
+                    </div>
+                  </Link>
+                )}
 
                 {/* Info */}
                 <div className="flex-1 p-3 min-w-0">
-                  {/* Badge */}
                   <span
                     className="inline-block rounded-full px-2 py-0.5 text-[10px] font-extrabold uppercase mb-1"
                     style={{
@@ -203,14 +213,29 @@ export default function FavouritesTab() {
                     {isRent ? "Rent" : "Sale"}
                   </span>
 
-                  <Link href={`/property/${p.id}`}>
-                    <p
-                      className="text-sm font-bold leading-tight truncate"
-                      style={{ color: "var(--text-main)" }}
+                  {onSelect ? (
+                    <button
+                      type="button"
+                      onClick={() => onSelect(p.id)}
+                      className="text-left w-full"
                     >
-                      {p.title}
-                    </p>
-                  </Link>
+                      <p
+                        className="text-sm font-bold leading-tight truncate"
+                        style={{ color: "var(--text-main)" }}
+                      >
+                        {p.title}
+                      </p>
+                    </button>
+                  ) : (
+                    <Link href={`/property/${p.id}`}>
+                      <p
+                        className="text-sm font-bold leading-tight truncate"
+                        style={{ color: "var(--text-main)" }}
+                      >
+                        {p.title}
+                      </p>
+                    </Link>
+                  )}
 
                   <p
                     className="text-xs mt-0.5 truncate"
@@ -219,7 +244,6 @@ export default function FavouritesTab() {
                     {p.area}, {p.city}
                   </p>
 
-                  {/* Price */}
                   <p
                     className="font-display text-lg font-bold mt-1"
                     style={{ color: "#0c3b2e" }}
