@@ -2,12 +2,19 @@
 import { useEffect, useRef } from "react";
 import type { PropertyListItem } from "@/lib/types";
 
+interface FlyTo { lat: number; lng: number; zoom?: number }
+
 interface Props {
-  properties: PropertyListItem[];
-  selectedId?: number | null;
-  onSelect: (id: number) => void;
+  properties:      PropertyListItem[];
+  selectedId?:     number | null;
+  onSelect:        (id: number) => void;
   onUserLocation?: (lat: number, lng: number) => void;
-  locateSignal?: number;
+  locateSignal?:   number;
+  flyToSignal?:    FlyTo | null;   // ← new: lets HomeClient fly map to search result
+}
+
+function isCapacitor(): boolean {
+  return typeof window !== "undefined" && !!(window as any).Capacitor;
 }
 
 export default function MapView({
@@ -16,86 +23,48 @@ export default function MapView({
   onSelect,
   onUserLocation,
   locateSignal,
+  flyToSignal,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef       = useRef<any>(null);
   const userMarker   = useRef<any>(null);
   const markersRef   = useRef<Record<number, any>>({});
-  const watchRef     = useRef<number | null>(null);
+  const watchIdRef   = useRef<string | number | null>(null);
+  const LRef         = useRef<any>(null);
 
-  /* ── Init map ── */
-  useEffect(() => {
-    if (mapRef.current || !containerRef.current) return;
-
-    import("leaflet").then((L) => {
-      delete (L.Icon.Default.prototype as any)._getIconUrl;
-      L.Icon.Default.mergeOptions({
-        iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-        iconUrl:       "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-        shadowUrl:     "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-      });
-
-      const map = L.map(containerRef.current!, {
-        center:      [7.9465, -1.0232],
-        zoom:        7,
-        zoomControl: false,
-      });
-
-      // Zoom control top-right — never hidden behind tab bar or sheets
-      L.control.zoom({ position: "topright" }).addTo(map);
-
-      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        maxZoom:     19,
-        attribution: "© OpenStreetMap contributors",
-      }).addTo(map);
-
-      mapRef.current = map;
-
-      // Trigger permission dialog immediately and start watching
-      startWatching(L, map);
-    });
-
-    return () => {
-      if (watchRef.current !== null) navigator.geolocation.clearWatch(watchRef.current);
-      mapRef.current?.remove();
-      mapRef.current = null;
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  function startWatching(L: any, map: any) {
-    if (!("geolocation" in navigator)) return;
-
-    // One-shot first — triggers OS permission dialog
-    navigator.geolocation.getCurrentPosition(
-      (pos) => handlePos(L, map, pos),
-      () => {},
-      { enableHighAccuracy: true, timeout: 10000 }
-    );
-
-    // Continuous watch
-    watchRef.current = navigator.geolocation.watchPosition(
-      (pos) => handlePos(L, map, pos),
-      () => {},
-      { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
-    );
-  }
-
-  function handlePos(L: any, map: any, pos: GeolocationPosition) {
-    const { latitude: lat, longitude: lng } = pos.coords;
+  /* ── Blue user dot ── */
+  function placeUserDot(L: any, map: any, lat: number, lng: number) {
     onUserLocation?.(lat, lng);
 
     const icon = L.divIcon({
       className: "",
-      html: `<div style="position:relative;width:44px;height:44px;">
-        <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
-          width:32px;height:32px;background:rgba(59,130,246,0.18);border-radius:50%;
-          animation:bpulse 2s ease-in-out infinite;"></div>
-        <style>@keyframes bpulse{0%,100%{transform:translate(-50%,-50%) scale(1);opacity:1;}50%{transform:translate(-50%,-50%) scale(1.6);opacity:0.25;}}</style>
-        <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
-          width:20px;height:20px;background:#3b82f6;border:3px solid white;border-radius:50%;
-          box-shadow:0 0 0 6px rgba(59,130,246,0.2),0 2px 8px rgba(0,0,0,.3);z-index:2;"></div>
-      </div>`,
+      html: `
+        <div style="position:relative;width:44px;height:44px;">
+          <div style="
+            position:absolute;top:50%;left:50%;
+            width:36px;height:36px;
+            background:rgba(59,130,246,0.18);
+            border-radius:50%;
+            transform:translate(-50%,-50%);
+            animation:bpulse 2s ease-in-out infinite;">
+          </div>
+          <style>
+            @keyframes bpulse{
+              0%,100%{transform:translate(-50%,-50%) scale(1);opacity:1;}
+              50%{transform:translate(-50%,-50%) scale(1.7);opacity:0.15;}
+            }
+          </style>
+          <div style="
+            position:absolute;top:50%;left:50%;
+            transform:translate(-50%,-50%);
+            width:20px;height:20px;
+            background:#3b82f6;
+            border:3px solid white;
+            border-radius:50%;
+            box-shadow:0 0 0 5px rgba(59,130,246,0.22),0 2px 8px rgba(0,0,0,.3);
+            z-index:2;">
+          </div>
+        </div>`,
       iconSize:   [44, 44],
       iconAnchor: [22, 22],
     });
@@ -108,21 +77,160 @@ export default function MapView({
         .addTo(map)
         .bindTooltip("You are here", { permanent: false, direction: "top" });
     }
+    map.setView([lat, lng], map.getZoom() < 13 ? 14 : map.getZoom());
   }
 
-  /* ── Fly to user on locateSignal ── */
+  /* ── Start location ── */
+  async function startLocation(L: any, map: any) {
+    if (isCapacitor()) {
+      try {
+        const { Geolocation } = await import("@capacitor/geolocation");
+        const perm = await Geolocation.requestPermissions();
+        if (perm.location !== "granted") return;
+
+        const pos = await Geolocation.getCurrentPosition({ enableHighAccuracy: true });
+        placeUserDot(L, map, pos.coords.latitude, pos.coords.longitude);
+
+        watchIdRef.current = await Geolocation.watchPosition(
+          { enableHighAccuracy: true },
+          (position, err) => {
+            if (err || !position) return;
+            placeUserDot(L, map, position.coords.latitude, position.coords.longitude);
+          }
+        );
+      } catch (e) {
+        console.warn("Capacitor Geolocation error:", e);
+      }
+    } else {
+      if (!("geolocation" in navigator)) return;
+
+      navigator.geolocation.getCurrentPosition(
+        (p) => placeUserDot(L, map, p.coords.latitude, p.coords.longitude),
+        (err) => console.warn("Geolocation error:", err),
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+
+      watchIdRef.current = navigator.geolocation.watchPosition(
+        (p) => placeUserDot(L, map, p.coords.latitude, p.coords.longitude),
+        () => {},
+        { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
+      ) as unknown as string;
+    }
+  }
+
+  /* ── Init map (runs once) ── */
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    // ── KEY FIX: clear Leaflet's internal stamp so StrictMode double-mount works ──
+    const container = containerRef.current;
+    if ((container as any)._leaflet_id) {
+      (container as any)._leaflet_id = null;
+    }
+
+    // Don't re-init if map already exists
+    if (mapRef.current) return;
+
+    import("leaflet").then(async (L) => {
+      // Guard again inside async callback — StrictMode may have already cleaned up
+      if (mapRef.current || !containerRef.current) return;
+
+      LRef.current = L;
+
+      delete (L.Icon.Default.prototype as any)._getIconUrl;
+      L.Icon.Default.mergeOptions({
+        iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+        iconUrl:       "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+        shadowUrl:     "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+      });
+
+      const map = L.map(containerRef.current!, {
+        center:      [7.9465, -1.0232],
+        zoom:        7,
+        zoomControl: false,
+      });
+      mapRef.current = map;
+
+      L.control.zoom({ position: "topright" }).addTo(map);
+
+      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom:     19,
+        attribution: "© OpenStreetMap contributors",
+      }).addTo(map);
+
+      await startLocation(L, map);
+    });
+
+    return () => {
+      // Stop watching position
+      if (watchIdRef.current !== null) {
+        if (isCapacitor()) {
+          import("@capacitor/geolocation").then(({ Geolocation }) => {
+            Geolocation.clearWatch({ id: watchIdRef.current as string });
+          });
+        } else {
+          navigator.geolocation.clearWatch(watchIdRef.current as number);
+        }
+        watchIdRef.current = null;
+      }
+
+      // Destroy map
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current  = null;
+        userMarker.current = null;
+      }
+
+      // Clear Leaflet stamp from container so next mount is clean
+      if (containerRef.current) {
+        (containerRef.current as any)._leaflet_id = null;
+      }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /* ── Locate button pressed ── */
   useEffect(() => {
     if (!locateSignal || !mapRef.current) return;
+
     if (userMarker.current) {
       mapRef.current.flyTo(userMarker.current.getLatLng(), 15, { duration: 1 });
-    } else {
-      navigator.geolocation.getCurrentPosition((pos) => {
-        mapRef.current?.flyTo(
-          [pos.coords.latitude, pos.coords.longitude], 15, { duration: 1 }
-        );
-      }, () => {});
+      return;
     }
+
+    if (isCapacitor()) {
+      import("@capacitor/geolocation").then(async ({ Geolocation }) => {
+        try {
+          const pos = await Geolocation.getCurrentPosition({ enableHighAccuracy: true });
+          if (LRef.current && mapRef.current) {
+            placeUserDot(LRef.current, mapRef.current, pos.coords.latitude, pos.coords.longitude);
+            mapRef.current.flyTo([pos.coords.latitude, pos.coords.longitude], 15, { duration: 1 });
+          }
+        } catch {}
+      });
+    } else {
+      navigator.geolocation.getCurrentPosition(
+        (p) => {
+          if (LRef.current && mapRef.current) {
+            placeUserDot(LRef.current, mapRef.current, p.coords.latitude, p.coords.longitude);
+            mapRef.current.flyTo([p.coords.latitude, p.coords.longitude], 15, { duration: 1 });
+          }
+        },
+        () => {}
+      );
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locateSignal]);
+
+  /* ── Fly to search result ── */
+  useEffect(() => {
+    if (!flyToSignal || !mapRef.current) return;
+    mapRef.current.flyTo(
+      [flyToSignal.lat, flyToSignal.lng],
+      flyToSignal.zoom ?? 14,
+      { duration: 1.2 }
+    );
+  }, [flyToSignal]);
 
   /* ── Property markers ── */
   useEffect(() => {
@@ -137,8 +245,7 @@ export default function MapView({
         if (!isFinite(p.lat!) || !isFinite(p.lng!)) return;
 
         const color    = p.listingType === "rent" ? "#ef4444" : "#22c55e";
-        const selected = p.id === selectedId;
-
+        const isSel    = p.id === selectedId;
         const units: any[] = (p as any).units ?? [];
         const price = (p as any).isCompound && units.length
           ? `from GH₵ ${Math.min(...units.map((u: any) => Number(u.price))).toLocaleString()}`
@@ -147,13 +254,16 @@ export default function MapView({
         const icon = L.divIcon({
           className: "",
           html: `<div style="
-            background:${color};color:#fff;
-            padding:3px 8px;border-radius:999px;
-            font-size:11px;font-weight:700;
+            background:${color};
+            color:#fff;
+            padding:3px 9px;
+            border-radius:999px;
+            font-size:11px;
+            font-weight:700;
             white-space:nowrap;
             box-shadow:0 2px 6px rgba(0,0,0,.35);
-            border:${selected ? "2px solid #fff" : "none"};
-            transform:${selected ? "scale(1.15)" : "scale(1)"};
+            border:${isSel ? "2.5px solid #fff" : "none"};
+            transform:${isSel ? "scale(1.18)" : "scale(1)"};
             transition:transform .15s;
           ">${price}</div>`,
           iconAnchor: [0, 0],

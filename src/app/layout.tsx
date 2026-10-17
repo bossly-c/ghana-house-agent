@@ -5,7 +5,7 @@ import "./globals.css";
 import { AuthProvider }  from "@/context/AuthContext";
 import { ThemeProvider } from "@/context/ThemeContext";
 
-// ← Remove weight arrays — Turbopack requires single-entry variable font calls
+// No weight arrays — Turbopack requires single-entry variable font calls
 const display = Fraunces({
   subsets: ["latin"],
   variable: "--font-fraunces",
@@ -65,7 +65,16 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         />
         <meta name="mobile-web-app-capable" content="yes" />
       </head>
-      <body className="font-sans antialiased">
+
+      {/*
+        Font variables on <body> as well as <html> so the Capacitor
+        WebView always has them in scope even before full CSS hydration.
+        This is what makes the "Ghana House Agent" inline-style fallback
+        (fontFamily: "var(--font-fraunces, Georgia, serif)") work on Android.
+      */}
+      <body
+        className={`${display.variable} ${sans.variable} font-sans antialiased`}
+      >
         <ThemeProvider>
           <AuthProvider>
             {children}

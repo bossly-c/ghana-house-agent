@@ -1,15 +1,11 @@
 "use client";
 
 import {
-  createContext,
-  useContext,
-  useState,
-  useEffect,
-  useCallback,
-  type ReactNode,
+  createContext, useContext, useState,
+  useEffect, useCallback, type ReactNode,
 } from "react";
 
-interface AuthUser {
+export interface AuthUser {
   id: number;
   username: string;
   name: string;
@@ -26,10 +22,7 @@ interface AuthContextValue {
 }
 
 const AuthContext = createContext<AuthContextValue>({
-  user:    null,
-  loading: true,
-  login:   () => {},
-  logout:  () => {},
+  user: null, loading: true, login: () => {}, logout: () => {},
 });
 
 const TOKEN_KEY = "gha_token";
@@ -39,20 +32,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user,    setUser]    = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
 
-  /* ── Rehydrate from localStorage on first render ── */
   useEffect(() => {
+    // Runs only on client — reads localStorage
     try {
       const token = localStorage.getItem(TOKEN_KEY);
       const raw   = localStorage.getItem(USER_KEY);
       if (token && raw) {
-        const parsed = JSON.parse(raw) as AuthUser;
-        setUser(parsed);
+        setUser(JSON.parse(raw) as AuthUser);
       }
     } catch {
       localStorage.removeItem(TOKEN_KEY);
       localStorage.removeItem(USER_KEY);
     } finally {
-      setLoading(false);  // ← always resolves, even if no token
+      setLoading(false);
     }
   }, []);
 

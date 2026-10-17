@@ -2,7 +2,6 @@
 @import "tailwindcss";
 @import "@photo-sphere-viewer/core/index.css";
 @import "@photo-sphere-viewer/virtual-tour-plugin/index.css";
-@import "tailwindcss";
 
 @utility font-display {
   font-family: var(--font-fraunces), Georgia, serif;
@@ -16,7 +15,6 @@
   scrollbar-width: none;
   &::-webkit-scrollbar { display: none; }
 }
-
 
 /* ═══════════════════════════════════════════════════════════
    TAILWIND V4 THEME TOKENS
@@ -86,12 +84,13 @@
   --sal: env(safe-area-inset-left,   0px);
 }
 
-/* Utility classes */
 .safe-top    { padding-top:    var(--sat); }
 .safe-bottom { padding-bottom: var(--sab); }
 
 /* ═══════════════════════════════════════════════════════════
-   DARK MODE CSS TOKENS
+   DESIGN TOKENS  (surface, text, border, brand)
+   ↓ --brand added here — fixes all var(--brand) usages in
+     the List Property form and anywhere else in the app
 ═══════════════════════════════════════════════════════════ */
 :root {
   --surface:    #ffffff;
@@ -100,6 +99,9 @@
   --text-muted: #6b7280;
   --border-col: #e5e7eb;
   --bg-app:     #faf4e8;
+
+  /* ── ADDED: brand colour token used by list page & nav ── */
+  --brand: #059669;
 }
 
 .dark {
@@ -109,6 +111,9 @@
   --text-muted: #9ca3af;
   --border-col: #2d2d2d;
   --bg-app:     #0a0a0a;
+
+  /* ── ADDED: slightly lighter green for dark mode readability ── */
+  --brand: #10b981;
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -130,6 +135,63 @@ body {
 
 ::selection {
   background: rgba(242, 183, 10, 0.45);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   FORM ELEMENT UTILITIES
+   ↓ ADDED: .input and .label-sm used throughout list/page.tsx
+     and any other form screens
+═══════════════════════════════════════════════════════════ */
+
+/* Text inputs, selects, textareas */
+.input {
+  display:          block;
+  width:            100%;
+  padding:          0.625rem 0.875rem;   /* 10px 14px */
+  border-radius:    0.875rem;            /* 14px — rounded-2xl feel */
+  border:           1.5px solid var(--border-col);
+  background:       var(--surface);
+  color:            var(--text-main);
+  font-size:        0.9375rem;           /* ~15px */
+  font-family:      var(--font-sans);
+  outline:          none;
+  transition:       border-color 0.15s, box-shadow 0.15s;
+  -webkit-appearance: none;
+  appearance:       none;
+}
+
+.input::placeholder {
+  color: var(--text-muted);
+}
+
+.input:focus {
+  border-color: var(--brand);
+  box-shadow:   0 0 0 3px rgba(5, 150, 105, 0.15);
+}
+
+/* Dark mode input */
+.dark .input {
+  background:   var(--surface);
+  border-color: var(--border-col);
+  color:        var(--text-main);
+}
+
+/* Select arrow */
+select.input {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat:   no-repeat;
+  background-position: right 0.875rem center;
+  padding-right:       2.25rem;
+}
+
+/* Small label above inputs */
+.label-sm {
+  display:      block;
+  font-size:    0.75rem;      /* 12px */
+  font-weight:  600;
+  color:        var(--text-muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 /* ═══════════════════════════════════════════════════════════
