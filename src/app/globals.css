@@ -1,0 +1,275 @@
+/* src/app/globals.css */
+@import "tailwindcss";
+@import "@photo-sphere-viewer/core/index.css";
+@import "@photo-sphere-viewer/virtual-tour-plugin/index.css";
+
+/* ═══════════════════════════════════════════════════════════
+   TAILWIND V4 THEME TOKENS
+═══════════════════════════════════════════════════════════ */
+@theme {
+  /* ── Fonts ───────────────────────────────────────────────────────── */
+  --font-sans:    var(--font-dmsans), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-fraunces), Georgia, serif;
+
+  /* ── Brand green ─────────────────────────────────────────────────── */
+  --color-brand-50:  #f0f7f3;
+  --color-brand-100: #dcebe3;
+  --color-brand-200: #b9d7c9;
+  --color-brand-300: #8cbcaa;
+  --color-brand-400: #5b9c85;
+  --color-brand-500: #357d66;
+  --color-brand-600: #1d6852;
+  --color-brand-700: #12533f;
+  --color-brand-800: #0c3b2e;
+  --color-brand-900: #082c22;
+  --color-brand-950: #04201a;
+
+  /* ── Gold accents ────────────────────────────────────────────────── */
+  --color-gold-300: #f8cf5c;
+  --color-gold-400: #f2b70a;
+  --color-gold-500: #dda500;
+  --color-gold-600: #b98a00;
+
+  /* ── Cream backgrounds ───────────────────────────────────────────── */
+  --color-cream-50:  #fdfaf4;
+  --color-cream-100: #faf4e8;
+  --color-cream-200: #f3e9d5;
+
+  /* ── Listing dot colours ─────────────────────────────────────────── */
+  --color-rent:      #e5484d;
+  --color-rent-dark: #c6373c;
+  --color-sale:      #16a34a;
+  --color-sale-dark: #0f8339;
+
+  /* ── Extra spacing ───────────────────────────────────────────────── */
+  --spacing-4_5: 1.125rem;
+
+  /* ── Border radius ───────────────────────────────────────────────── */
+  --radius-2xl: 1rem;
+  --radius-3xl: 1.5rem;
+  --radius-4xl: 2rem;
+
+  /* ── Box shadows ─────────────────────────────────────────────────── */
+  --shadow-sheet: 0 -18px 60px rgba(4,32,26,0.35);
+  --shadow-card:  0 4px 24px rgba(0,0,0,0.08);
+  --shadow-pin:   0 3px 10px rgba(0,0,0,0.35);
+
+  /* ── Animations ──────────────────────────────────────────────────── */
+  --animate-float-y:    float-y 2.2s ease-in-out infinite;
+  --animate-pulse-ring: gha-pulse-ring 1.6s ease-out infinite;
+  --animate-user-pulse: gha-user-pulse 2.4s ease-out infinite;
+  --animate-shimmer:    shimmer 1.8s linear infinite;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   SAFE AREA INSETS  (notch, home bar, status bar)
+═══════════════════════════════════════════════════════════ */
+:root {
+  --sat: env(safe-area-inset-top,    0px);
+  --sar: env(safe-area-inset-right,  0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left,   0px);
+}
+
+/* Utility classes */
+.safe-top    { padding-top:    var(--sat); }
+.safe-bottom { padding-bottom: var(--sab); }
+
+/* ═══════════════════════════════════════════════════════════
+   DARK MODE CSS TOKENS
+═══════════════════════════════════════════════════════════ */
+:root {
+  --surface:    #ffffff;
+  --surface-2:  #f9fafb;
+  --text-main:  #111827;
+  --text-muted: #6b7280;
+  --border-col: #e5e7eb;
+  --bg-app:     #faf4e8;
+}
+
+.dark {
+  --surface:    #1a1a1a;
+  --surface-2:  #111111;
+  --text-main:  #f9fafb;
+  --text-muted: #9ca3af;
+  --border-col: #2d2d2d;
+  --bg-app:     #0a0a0a;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   BASE RESETS
+═══════════════════════════════════════════════════════════ */
+html,
+body {
+  height: 100%;
+  overscroll-behavior: none;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--bg-app);
+  color: var(--text-main);
+  -webkit-font-smoothing: antialiased;
+  transition: background 0.2s, color 0.2s;
+}
+
+::selection {
+  background: rgba(242, 183, 10, 0.45);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   LEAFLET OVERRIDES
+═══════════════════════════════════════════════════════════ */
+.leaflet-container {
+  font-family: var(--font-sans);
+  background: #e9e4d8;
+  outline: none;
+}
+
+.leaflet-control-attribution {
+  font-size: 9px !important;
+  background: rgba(255, 255, 255, 0.75) !important;
+  backdrop-filter: blur(4px);
+  padding: 1px 6px;
+  border-radius: 6px 0 0 0;
+}
+
+.leaflet-popup-content-wrapper {
+  border-radius: 14px !important;
+  box-shadow: 0 12px 32px rgba(4, 32, 26, 0.22) !important;
+}
+
+.leaflet-popup-content {
+  margin: 14px 14px 12px !important;
+  font-family: var(--font-sans) !important;
+}
+
+.leaflet-popup-tip {
+  box-shadow: none !important;
+}
+
+.gha-icon,
+.gha-user-icon {
+  background: transparent !important;
+  border: none !important;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   KEYFRAME ANIMATIONS
+═══════════════════════════════════════════════════════════ */
+@keyframes gha-pulse-ring {
+  0%   { transform: translate(-50%, -50%) scale(0.9);  opacity: 0.9; }
+  100% { transform: translate(-50%, -50%) scale(2.1);  opacity: 0;   }
+}
+
+@keyframes gha-user-pulse {
+  0%   { transform: translate(-50%, -50%) scale(1);    opacity: 0.55; }
+  100% { transform: translate(-50%, -50%) scale(2.6);  opacity: 0;    }
+}
+
+@keyframes float-y {
+  0%, 100% { transform: translateY(0);    }
+  50%      { transform: translateY(-4px); }
+}
+
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+
+.animate-float-y {
+  animation: float-y 2.2s ease-in-out infinite;
+}
+
+.animate-shimmer {
+  animation: shimmer 1.8s linear infinite;
+  background: linear-gradient(
+    90deg,
+    var(--color-brand-100) 25%,
+    var(--color-brand-50)  50%,
+    var(--color-brand-100) 75%
+  );
+  background-size: 200% 100%;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   SCROLLBAR UTILITIES
+═══════════════════════════════════════════════════════════ */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
+.thin-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(12, 59, 46, 0.18) transparent;
+}
+.thin-scroll::-webkit-scrollbar       { width: 5px; }
+.thin-scroll::-webkit-scrollbar-track { background: transparent; }
+.thin-scroll::-webkit-scrollbar-thumb {
+  background: rgba(12, 59, 46, 0.18);
+  border-radius: 99px;
+}
+.thin-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(12, 59, 46, 0.35);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   SURFACE TEXTURE
+═══════════════════════════════════════════════════════════ */
+.grain {
+  position: relative;
+  isolation: isolate;
+}
+.grain::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  border-radius: inherit;
+  background-image: radial-gradient(rgba(255,255,255,0.09) 1px, transparent 1px);
+  background-size: 3px 3px;
+  opacity: 0.5;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   PHOTO SPHERE VIEWER OVERRIDES
+═══════════════════════════════════════════════════════════ */
+.psv-container {
+  border-radius: 1.1rem;
+  font-family: var(--font-sans) !important;
+}
+
+.psv-navbar {
+  border-radius: 0 0 1.1rem 1.1rem;
+  background: linear-gradient(transparent, rgba(4, 32, 26, 0.72)) !important;
+}
+
+.psv-caption { font-family: var(--font-sans) !important; }
+
+.psv-virtual-tour-link {
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.45));
+}
+.psv-virtual-tour-link:hover {
+  filter: drop-shadow(0 4px 14px rgba(242, 183, 10, 0.6));
+}
+
+/* ═══════════════════════════════════════════════════════════
+   FOCUS RINGS
+═══════════════════════════════════════════════════════════ */
+:focus-visible {
+  outline: 2px solid var(--color-brand-500);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+:focus:not(:focus-visible) { outline: none; }
+
+/* ═══════════════════════════════════════════════════════════
+   PRINT
+═══════════════════════════════════════════════════════════ */
+@media print {
+  .leaflet-container,
+  .leaflet-control { display: none !important; }
+}
