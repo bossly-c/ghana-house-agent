@@ -28,7 +28,7 @@ export default function MapView({
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef       = useRef<any>(null);
   const userMarker   = useRef<any>(null);
-  const markersRef   = useRef<Record<string, any>>({});   // ← string keys
+  const markersRef   = useRef<Record<string, any>>({});   // ✅ string keys
   const watchIdRef   = useRef<string | number | null>(null);
   const LRef         = useRef<any>(null);
 
@@ -239,7 +239,7 @@ export default function MapView({
 
         const color = p.listingType === "rent" ? "#ef4444" : "#22c55e";
 
-        // ✅ FIX 1: cast both sides so string id vs number selectedId always compares correctly
+        // ✅ Cast both sides — p.id is string, selectedId is number | null
         const isSel = String(p.id) === String(selectedId ?? "");
 
         const units: any[] = (p as any).units ?? [];
@@ -267,10 +267,10 @@ export default function MapView({
 
         const marker = L.marker([p.lat!, p.lng!], { icon })
           .addTo(mapRef.current)
-          // ✅ FIX 2: p.id is string → cast to number to match onSelect(id: number)
+          // ✅ p.id is string → cast to number to satisfy onSelect(id: number)
           .on("click", () => onSelect(Number(p.id)));
 
-        // ✅ FIX 3: markersRef is Record<string, any> → use String key
+        // ✅ Store with string key
         markersRef.current[String(p.id)] = marker;
       });
     });
