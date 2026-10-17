@@ -10,7 +10,7 @@ interface Props {
   onSelect:        (id: number) => void;
   onUserLocation?: (lat: number, lng: number) => void;
   locateSignal?:   number;
-  flyToSignal?:    FlyTo | null;   // ← new: lets HomeClient fly map to search result
+  flyToSignal?:    FlyTo | null;
 }
 
 function isCapacitor(): boolean {
@@ -28,7 +28,7 @@ export default function MapView({
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef       = useRef<any>(null);
   const userMarker   = useRef<any>(null);
-  const markersRef   = useRef<Record<number, any>>({});
+  const markersRef   = useRef<Record<string, any>>({});   // ← string keys
   const watchIdRef   = useRef<string | number | null>(null);
   const LRef         = useRef<any>(null);
 
@@ -122,17 +122,13 @@ export default function MapView({
   useEffect(() => {
     if (!containerRef.current) return;
 
-    // ── KEY FIX: clear Leaflet's internal stamp so StrictMode double-mount works ──
     const container = containerRef.current;
     if ((container as any)._leaflet_id) {
       (container as any)._leaflet_id = null;
     }
-
-    // Don't re-init if map already exists
     if (mapRef.current) return;
 
     import("leaflet").then(async (L) => {
-      // Guard again inside async callback — StrictMode may have already cleaned up
       if (mapRef.current || !containerRef.current) return;
 
       LRef.current = L;
@@ -162,7 +158,6 @@ export default function MapView({
     });
 
     return () => {
-      // Stop watching position
       if (watchIdRef.current !== null) {
         if (isCapacitor()) {
           import("@capacitor/geolocation").then(({ Geolocation }) => {
@@ -174,14 +169,12 @@ export default function MapView({
         watchIdRef.current = null;
       }
 
-      // Destroy map
       if (mapRef.current) {
         mapRef.current.remove();
-        mapRef.current  = null;
+        mapRef.current     = null;
         userMarker.current = null;
       }
 
-      // Clear Leaflet stamp from container so next mount is clean
       if (containerRef.current) {
         (containerRef.current as any)._leaflet_id = null;
       }
@@ -244,8 +237,11 @@ export default function MapView({
         if (p.lat === null || p.lng === null) return;
         if (!isFinite(p.lat!) || !isFinite(p.lng!)) return;
 
-        const color    = p.listingType === "rent" ? "#ef4444" : "#22c55e";
-        const isSel    = p.id === selectedId;
+        const color = p.listingType === "rent" ? "#ef4444" : "#22c55e";
+
+        // ✅ FIX 1: cast both sides so string id vs number selectedId always compares correctly
+        const isSel = String(p.id) === String(selectedId ?? "");
+
         const units: any[] = (p as any).units ?? [];
         const price = (p as any).isCompound && units.length
           ? `from GH₵ ${Math.min(...units.map((u: any) => Number(u.price))).toLocaleString()}`
@@ -271,9 +267,11 @@ export default function MapView({
 
         const marker = L.marker([p.lat!, p.lng!], { icon })
           .addTo(mapRef.current)
-          .on("click", () => onSelect(p.id));
+          // ✅ FIX 2: p.id is string → cast to number to match onSelect(id: number)
+          .on("click", () => onSelect(Number(p.id)));
 
-        markersRef.current[p.id] = marker;
+        // ✅ FIX 3: markersRef is Record<string, any> → use String key
+        markersRef.current[String(p.id)] = marker;
       });
     });
   }, [properties, selectedId, onSelect]);
