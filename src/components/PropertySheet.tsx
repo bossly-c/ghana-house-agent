@@ -1,495 +1,303 @@
 "use client";
-import { useEffect, useRef, useState, useCallback } from "react";
-import { motion, AnimatePresence, type PanInfo } from "framer-motion";
+
+import { useState, useEffect } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import {
-  X, Heart, ExternalLink, MapPin, BedDouble,
-  Bath, Maximize2, Eye, Calendar, ChevronRight,
-  Building2,
+  X, Heart, Share2, Bed, Bath, LayoutGrid, Phone,
+  MessageCircle, MapPin, Navigation, ChevronRight,
 } from "lucide-react";
-import Link from "next/link";
-import { useFavourites } from "./FavouritesTab";
-import { formatGHS } from "@/lib/format";
-import type { PropertyDetail, PropertyUnit } from "@/lib/types";
+import dynamic from "next/dynamic";
+import type { PropertyListItem } from "@/lib/types";
+
+const TourViewer = dynamic(() => import("@/components/TourViewer"), { ssr: false });
+const BookingForm = dynamic(() => import("@/components/BookingForm"), { ssr: false });
 
 interface Props {
-  propertyId: string;
-  onClose:    () => void;
+  property: PropertyListItem;
+  onClose: () => void;
+  onNavigate?: (dest: { name: string; lat: number; lng: number }) => void;
 }
 
-export default function PropertySheet({ propertyId, onClose }: Props) {
-  const { isFav, toggle }               = useFavourites();
-  const [property, setProperty]         = useState<PropertyDetail | null>(null);
-  const [loading, setLoading]           = useState(true);
-  const [expanded, setExpanded]         = useState(false);
-  const [selectedUnit, setSelectedUnit] = useState<PropertyUnit | null>(null);
-  const sheetRef = useRef<HTMLDivElement>(null);
+type SheetView = "summary" | "detail" | "tour" | "book";
 
-  const fetchProperty = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res  = await fetch(`/api/properties/${propertyId}`);
-      const data = await res.json();
-      setProperty(data.property ?? null);
-      setSelectedUnit(null);
-    } catch {
-      // ignore
-    } finally {
-      setLoading(false);
-    }
-  }, [propertyId]);
+export default function PropertySheet({ property: p, onClose, onNavigate }: Props) {
+  const [view,    setView]    = useState<SheetView>("summary");
+  const [faved,   setFaved]   = useState(false);
+  const [imgIdx,  setImgIdx]  = useState(0);
 
-  useEffect(() => { fetchProperty(); }, [fetchProperty]);
+  const photos: string[] = (p as any).photos ?? (p as any).images ?? [];
 
-  const handleDragEnd = (_: unknown, info: PanInfo) => {
-    if (info.velocity.y > 300 || info.offset.y > 120) {
-      if (expanded) setExpanded(false);
-      else onClose();
-    } else if (info.velocity.y < -300 || info.offset.y < -80) {
-      setExpanded(true);
+  useEffect(() => {
+    const favs: number[] = JSON.parse(localStorage.getItem("gha_favs") ?? "[]");
+    setFaved(favs.includes(p.id));
+  }, [p.id]);
+
+  const toggleFav = () => {
+    const favs: number[] = JSON.parse(localStorage.getItem("gha_favs") ?? "[]");
+    const next = faved ? favs.filter(x => x !== p.id) : [...favs, p.id];
+    localStorage.setItem("gha_favs", JSON.stringify(next));
+    setFaved(!faved);
+  };
+
+  const handleShare = async () => {
+    const url = `${window.location.origin}/property/${p.id}`;
+    if (navigator.share) {
+      await navigator.share({ title: p.title, url });
+    } else {
+      await navigator.clipboard.writeText(url);
     }
   };
 
-  const isRent   = property?.listingType === "rent";
-  const img      = property?.images?.find((u: string) => u.startsWith("http")) ?? null;
-  const peekY    = "55%";
-  const expandedY = "5%";
+  const canNavigate = p.lat !== null && p.lng !== null && isFinite(p.lat!) && isFinite(p.lng!);
+
+  const units: any[] = (p as any).units ?? [];
+  const isCompound   = (p as any).isCompound && units.length > 0;
+  const lowestPrice  = isCompound
+    ? Math.min(...units.map((u: any) => Number(u.price)))
+    : Number(p.price ?? 0);
+
+  const priceLabel = isCompound
+    ? `from GH₵ ${lowestPrice.toLocaleString()}`
+    : `GH₵ ${lowestPrice.toLocaleString()}`;
 
   return (
     <AnimatePresence>
       <motion.div
-        ref={sheetRef}
+        key="sheet-backdrop"
+        className="fixed inset-0 z-[900] bg-black/40"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        onClick={onClose}
+      />
+
+      <motion.div
         key="sheet"
-        className="fixed left-0 right-0 bottom-0 z-40 rounded-t-3xl overflow-hidden"
+        className="fixed inset-x-0 bottom-0 z-[901] bg-white dark:bg-zinc-900 rounded-t-3xl shadow-2xl flex flex-col"
         style={{
-          background:    "var(--surface)",
-          boxShadow:     "0 -18px 60px rgba(4,32,26,0.30)",
-          paddingBottom: "calc(var(--sab) + 4px)",
+          maxHeight: "92dvh",
+          paddingBottom: "env(safe-area-inset-bottom)",
         }}
         initial={{ y: "100%" }}
-        animate={{ y: expanded ? expandedY : peekY }}
+        animate={{ y: 0 }}
         exit={{ y: "100%" }}
-        transition={{ type: "spring", damping: 28, stiffness: 280 }}
-        drag="y"
-        dragConstraints={{ top: 0, bottom: 0 }}
-        dragElastic={0.15}
-        onDragEnd={handleDragEnd}
+        transition={{ type: "spring", damping: 28, stiffness: 300 }}
+        onClick={e => e.stopPropagation()}
       >
         {/* Drag handle */}
-        <div
-          className="flex justify-center pt-3 pb-2 cursor-grab active:cursor-grabbing"
-          onClick={() => setExpanded((e) => !e)}
-        >
-          <div
-            className="w-10 h-1.5 rounded-full"
-            style={{ background: "var(--border-col)" }}
-          />
+        <div className="flex justify-center pt-3 pb-1">
+          <div className="w-12 h-1.5 bg-zinc-300 dark:bg-zinc-600 rounded-full" />
         </div>
 
-        {/* Header row */}
-        <div className="flex items-center justify-between px-5 pb-2">
-          <button
-            onClick={onClose}
-            type="button"
-            className="p-1.5 rounded-full"
-            style={{ background: "var(--surface-2)" }}
-          >
-            <X size={18} style={{ color: "var(--text-muted)" }} />
-          </button>
-
-          <div className="flex items-center gap-2">
-            {property && (
-              <button
-                onClick={() => toggle(property.id)}
-                type="button"
-                className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold transition active:scale-90"
-                style={{
-                  background: isFav(property.id) ? "#fee2e2" : "var(--surface-2)",
-                  color:      isFav(property.id) ? "#ef4444" : "var(--text-muted)",
-                  border:     "1px solid var(--border-col)",
-                }}
-              >
-                <Heart
-                  size={16}
-                  className={isFav(property.id) ? "fill-red-500" : ""}
-                />
-                {isFav(property.id) ? "Saved" : "Save"}
-              </button>
-            )}
-            {property && (
-              <Link
-                href={`/property/${property.id}`}
-                className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold"
-                style={{ background: "#0c3b2e", color: "#f2b70a" }}
-              >
-                View <ExternalLink size={14} />
-              </Link>
-            )}
+        {/* Header */}
+        <div className="flex items-start justify-between px-4 pb-2">
+          <div className="flex-1 min-w-0 pr-3">
+            <h2 className="font-display text-lg font-bold text-zinc-900 dark:text-white leading-tight line-clamp-2">
+              {p.title}
+            </h2>
+            {p.area || p.city ? (
+              <p className="text-xs text-zinc-500 flex items-center gap-1 mt-0.5">
+                <MapPin size={11} /> {[p.area, p.city].filter(Boolean).join(", ")}
+              </p>
+            ) : null}
           </div>
+          <button onClick={onClose}
+            className="w-9 h-9 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center flex-shrink-0">
+            <X size={18} />
+          </button>
         </div>
 
-        {/* Scrollable content */}
-        <div
-          className="overflow-y-auto no-scrollbar px-5 pb-4"
-          style={{ maxHeight: "88vh" }}
-        >
-          {/* Loading */}
-          {loading && (
-            <div className="py-10 flex justify-center">
-              <span
-                className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin"
-                style={{ borderColor: "#0c3b2e" }}
+        {/* ── Big Price ── */}
+        <div className="px-4 pb-3">
+          <span className="font-display text-[2.6rem] font-bold leading-none text-emerald-600">
+            {priceLabel}
+          </span>
+          <span className="text-sm text-zinc-500 ml-2">
+            {isCompound ? "/ unit" : (p.listingType === "rent" ? "/ mo" : "")}
+          </span>
+          <span className={`ml-3 inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+            p.listingType === "rent"
+              ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+              : "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+          }`}>
+            {p.listingType === "rent" ? "For Rent" : "For Sale"}
+          </span>
+        </div>
+
+        {/* Scrollable body */}
+        <div className="flex-1 overflow-y-auto overscroll-contain px-4 pb-4 space-y-4">
+
+          {/* Photos */}
+          {photos.length > 0 && (
+            <div className="relative h-52 rounded-2xl overflow-hidden bg-zinc-200 dark:bg-zinc-800">
+              <img
+                src={photos[imgIdx]}
+                alt={p.title}
+                className="w-full h-full object-cover"
               />
+              {photos.length > 1 && (
+                <div className="absolute bottom-2 left-0 right-0 flex justify-center gap-1">
+                  {photos.map((_, i) => (
+                    <button key={i} onClick={() => setImgIdx(i)}
+                      className={`w-1.5 h-1.5 rounded-full transition-colors ${i === imgIdx ? "bg-white" : "bg-white/50"}`} />
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
-          {!loading && !property && (
-            <p className="text-center py-10 text-sm" style={{ color: "var(--text-muted)" }}>
-              Could not load this property.
-            </p>
+          {/* Stats */}
+          {!isCompound && (
+            <div className="flex gap-3">
+              {[
+                { icon: <Bed size={16} />,        val: (p as any).beds ?? (p as any).bedrooms,  label: "Beds" },
+                { icon: <Bath size={16} />,       val: (p as any).baths ?? (p as any).bathrooms, label: "Baths" },
+                { icon: <LayoutGrid size={16} />, val: (p as any).halls,                         label: "Halls" },
+              ].map(({ icon, val, label }) =>
+                val !== undefined && val !== null ? (
+                  <div key={label} className="flex-1 bg-zinc-50 dark:bg-zinc-800 rounded-xl p-3 flex flex-col items-center gap-1">
+                    <span className="text-zinc-400">{icon}</span>
+                    <span className="font-bold text-zinc-900 dark:text-white text-sm">{val}</span>
+                    <span className="text-[10px] text-zinc-500">{label}</span>
+                  </div>
+                ) : null
+              )}
+            </div>
           )}
 
-          {!loading && property && (
-            <>
-              {/* ── Photo ─────────────────────────────────── */}
-              {img && (
-                <div className="relative w-full h-44 rounded-2xl overflow-hidden mb-4 mt-1">
-                  <img
-                    src={img}
-                    className="w-full h-full object-cover"
-                    alt={property.title}
-                  />
-                  <span
-                    className="absolute top-3 left-3 rounded-full px-2.5 py-1 text-[11px] font-extrabold uppercase"
-                    style={{
-                      background: isRent ? "#dc2626" : "#16a34a",
-                      color:      "#fff",
-                    }}
-                  >
-                    {isRent ? "For Rent" : "For Sale"}
-                  </span>
-                  {property.isCompound && (
-                    <span
-                      className="absolute top-3 right-3 flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-extrabold"
-                      style={{ background: "#f2b70a", color: "#0c3b2e" }}
-                    >
-                      <Building2 size={11} /> Compound
-                    </span>
-                  )}
-                </div>
-              )}
-
-              {/* ── Title + location ──────────────────────── */}
-              <h2
-                className="font-display text-xl font-bold leading-snug"
-                style={{ color: "var(--text-main)" }}
-              >
-                {property.title}
-              </h2>
-              <p
-                className="mt-1 flex items-center gap-1 text-sm"
-                style={{ color: "var(--text-muted)" }}
-              >
-                <MapPin size={13} />
-                {property.area}, {property.city} · {property.region}
-              </p>
-
-              {/* ══════════════════════════════════════════
-                  COMPOUND — unit selector
-              ══════════════════════════════════════════ */}
-              {property.isCompound && property.units.length > 0 && (
-                <div className="mt-4">
-                  <p
-                    className="text-xs font-extrabold uppercase tracking-wider mb-3"
-                    style={{ color: "var(--text-muted)" }}
-                  >
-                    {selectedUnit ? "Selected unit" : "Choose a unit type"}
-                  </p>
-
-                  {/* All unit cards */}
-                  {!selectedUnit && (
-                    <div className="space-y-2.5">
-                      {property.units.map((unit) => (
-                        <button
-                          key={unit.id}
-                          type="button"
-                          onClick={() => {
-                            setSelectedUnit(unit);
-                            setExpanded(true);
-                          }}
-                          className="w-full text-left rounded-2xl p-4 flex items-center justify-between transition active:scale-[0.98]"
-                          style={{
-                            background: "var(--surface-2)",
-                            border:     "1.5px solid var(--border-col)",
-                          }}
-                        >
-                          <div className="flex-1 min-w-0">
-                            <span
-                              className="inline-block rounded-full px-2.5 py-0.5 text-[10px] font-extrabold uppercase mb-1.5"
-                              style={{
-                                background: isRent ? "#fee2e2" : "#dcfce7",
-                                color:      isRent ? "#dc2626" : "#16a34a",
-                              }}
-                            >
-                              {unit.unitType}
-                            </span>
-                            <div className="flex items-center gap-3 text-xs" style={{ color: "var(--text-muted)" }}>
-                              {unit.bedrooms > 0 && (
-                                <span className="flex items-center gap-1">
-                                  <BedDouble size={11} /> {unit.bedrooms} bed{unit.bedrooms > 1 ? "s" : ""}
-                                </span>
-                              )}
-                              {unit.bathrooms > 0 && (
-                                <span className="flex items-center gap-1">
-                                  <Bath size={11} /> {unit.bathrooms} bath{unit.bathrooms > 1 ? "s" : ""}
-                                </span>
-                              )}
-                              {unit.halls > 0 && (
-                                <span className="flex items-center gap-1">
-                                  🚪 {unit.halls} hall{unit.halls > 1 ? "s" : ""}
-                                </span>
-                              )}
-                            </div>
-                            {!unit.available && (
-                              <p className="text-[10px] font-bold text-red-500 mt-1">
-                                Currently taken
-                              </p>
-                            )}
-                          </div>
-                          <div className="text-right ml-3 shrink-0">
-                            <p
-                              className="font-display text-lg font-bold"
-                              style={{ color: "#0c3b2e" }}
-                            >
-                              {formatGHS(unit.price)}
-                            </p>
-                            {isRent && (
-                              <p className="text-[10px]" style={{ color: "var(--text-muted)" }}>
-                                /{unit.pricePeriod}
-                              </p>
-                            )}
-                            <ChevronRight
-                              size={16}
-                              className="ml-auto mt-1"
-                              style={{ color: "var(--text-muted)" }}
-                            />
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Selected unit detail */}
-                  {selectedUnit && (
-                    <div>
-                      <button
-                        type="button"
-                        onClick={() => setSelectedUnit(null)}
-                        className="flex items-center gap-1.5 text-xs font-bold mb-3 px-3 py-1.5 rounded-full"
-                        style={{
-                          background: "var(--surface-2)",
-                          color:      "var(--text-muted)",
-                          border:     "1px solid var(--border-col)",
-                        }}
-                      >
-                        ← All units
-                      </button>
-
-                      <div
-                        className="rounded-2xl p-4"
-                        style={{
-                          background: "var(--surface-2)",
-                          border:     "1.5px solid #f2b70a",
-                        }}
-                      >
-                        <span
-                          className="inline-block rounded-full px-2.5 py-0.5 text-[10px] font-extrabold uppercase mb-2"
-                          style={{
-                            background: isRent ? "#fee2e2" : "#dcfce7",
-                            color:      isRent ? "#dc2626" : "#16a34a",
-                          }}
-                        >
-                          {selectedUnit.unitType}
-                        </span>
-
-                        {/* Big price */}
-                        <p
-                          className="font-display font-bold leading-none"
-                          style={{ fontSize: "2.6rem", color: "#0c3b2e" }}
-                        >
-                          {formatGHS(selectedUnit.price)}
-                          {isRent && (
-                            <span
-                              className="text-lg font-semibold ml-1"
-                              style={{ color: "var(--text-muted)" }}
-                            >
-                              /{selectedUnit.pricePeriod}
-                            </span>
-                          )}
-                        </p>
-
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          {[
-                            { label: "Beds",  val: selectedUnit.bedrooms,  show: selectedUnit.bedrooms > 0  },
-                            { label: "Baths", val: selectedUnit.bathrooms, show: selectedUnit.bathrooms > 0 },
-                            { label: "Halls", val: selectedUnit.halls,     show: selectedUnit.halls > 0     },
-                          ]
-                            .filter((s) => s.show)
-                            .map(({ label, val }) => (
-                              <span
-                                key={label}
-                                className="rounded-xl px-3 py-1.5 text-xs font-bold"
-                                style={{ background: "#0c3b2e12", color: "#0c3b2e" }}
-                              >
-                                {val} {label}
-                              </span>
-                            ))}
-                          {!selectedUnit.available && (
-                            <span
-                              className="rounded-xl px-3 py-1.5 text-xs font-bold"
-                              style={{ background: "#fee2e2", color: "#dc2626" }}
-                            >
-                              Currently taken
-                            </span>
-                          )}
-                        </div>
-
-                        {selectedUnit.description && (
-                          <p
-                            className="mt-3 text-sm leading-relaxed"
-                            style={{ color: "var(--text-main)" }}
-                          >
-                            {selectedUnit.description}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* ══════════════════════════════════════════
-                  SINGLE PROPERTY — normal price + key stats
-              ══════════════════════════════════════════ */}
-              {!property.isCompound && (
-                <>
-                  <p
-                    className="font-display font-bold leading-none mt-3"
-                    style={{ fontSize: "2.6rem", color: "#0c3b2e" }}
-                  >
-                    {formatGHS(property.price)}
-                    {isRent && (
-                      <span
-                        className="text-lg font-semibold ml-1"
-                        style={{ color: "var(--text-muted)" }}
-                      >
-                        /{property.pricePeriod}
-                      </span>
-                    )}
-                  </p>
-
-                  {/* Key stats — uses beds/baths/halls from PropertyDetail */}
-                  <div className="mt-4 grid grid-cols-4 gap-2">
-                    {[
-                      { icon: BedDouble, val: property.beds,           label: "Beds"  },
-                      { icon: Bath,      val: property.baths,          label: "Baths" },
-                      { icon: Maximize2, val: property.halls > 0 ? `${property.halls}` : "—", label: "Halls" },
-                      { icon: Eye,       val: property.views ?? 0,     label: "Views" },
-                    ].map(({ icon: Icon, val, label }) => (
-                      <div
-                        key={label}
-                        className="flex flex-col items-center justify-center rounded-xl py-2.5 gap-1"
-                        style={{
-                          background: "var(--surface-2)",
-                          border:     "1px solid var(--border-col)",
-                        }}
-                      >
-                        <Icon size={16} style={{ color: "#0c3b2e" }} />
-                        <span
-                          className="text-sm font-extrabold"
-                          style={{ color: "var(--text-main)" }}
-                        >
-                          {val}
-                        </span>
-                        <span
-                          className="text-[9px] font-semibold uppercase tracking-wide"
-                          style={{ color: "var(--text-muted)" }}
-                        >
-                          {label}
-                        </span>
-                      </div>
-                    ))}
+          {/* Compound unit cards */}
+          {isCompound && units.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Unit Types</p>
+              {units.map((u: any, i: number) => (
+                <div key={i} className="bg-zinc-50 dark:bg-zinc-800 rounded-xl p-3 flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-semibold text-sm text-zinc-900 dark:text-white">{u.unitType}</p>
+                    <p className="text-xs text-zinc-500">
+                      {[u.bedrooms && `${u.bedrooms} bed`, u.bathrooms && `${u.bathrooms} bath`, u.halls && `${u.halls} hall`].filter(Boolean).join(" · ")}
+                    </p>
+                    {u.description && <p className="text-xs text-zinc-400 mt-0.5 line-clamp-1">{u.description}</p>}
                   </div>
-                </>
-              )}
-
-              {/* ── Compound starting price (when no unit selected) ── */}
-              {property.isCompound && !selectedUnit && (
-                <p
-                  className="mt-3 text-sm font-semibold"
-                  style={{ color: "var(--text-muted)" }}
-                >
-                  Starting from{" "}
-                  <span
-                    className="font-display text-xl font-bold"
-                    style={{ color: "#0c3b2e" }}
-                  >
-                    {formatGHS(property.price)}
-                  </span>
-                  {isRent && `/${property.pricePeriod}`}
-                </p>
-              )}
-
-              {/* ── Viewing days ──────────────────────────── */}
-              {property.viewingDays && property.viewingDays.length > 0 && (
-                <div className="mt-4">
-                  <p
-                    className="text-xs font-extrabold uppercase tracking-wider mb-2"
-                    style={{ color: "var(--text-muted)" }}
-                  >
-                    Viewing days
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {property.viewingDays.map((d: string) => (
-                      <span
-                        key={d}
-                        className="rounded-full px-3 py-1 text-xs font-bold flex items-center gap-1"
-                        style={{ background: "#0c3b2e12", color: "#0c3b2e" }}
-                      >
-                        <Calendar size={11} /> {d}
-                      </span>
-                    ))}
+                  <div className="text-right flex-shrink-0">
+                    <p className="font-display font-bold text-emerald-600 text-base">
+                      GH₵ {Number(u.price).toLocaleString()}
+                    </p>
+                    <p className="text-[10px] text-zinc-400">/{u.pricePeriod ?? "mo"}</p>
                   </div>
                 </div>
-              )}
-
-              {/* ── Description ───────────────────────────── */}
-              {property.description && (
-                <div className="mt-4">
-                  <p
-                    className="text-xs font-extrabold uppercase tracking-wider mb-1.5"
-                    style={{ color: "var(--text-muted)" }}
-                  >
-                    About
-                  </p>
-                  <p className="text-sm leading-relaxed" style={{ color: "var(--text-main)" }}>
-                    {property.description}
-                  </p>
-                </div>
-              )}
-
-              {/* ── Full page CTA ─────────────────────────── */}
-              <Link
-                href={`/property/${property.id}`}
-                className="mt-6 flex w-full items-center justify-center gap-2 rounded-2xl py-3.5 font-extrabold text-sm"
-                style={{ background: "#0c3b2e", color: "#f2b70a" }}
-              >
-                View full listing &amp; book a tour
-                <ExternalLink size={15} />
-              </Link>
-            </>
+              ))}
+            </div>
           )}
+
+          {/* Description */}
+          {p.description && (
+            <p className="text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed">{p.description}</p>
+          )}
+
+          {/* Navigate button */}
+          {canNavigate && onNavigate && (
+            <button
+              onClick={() => onNavigate({ name: p.title, lat: p.lat!, lng: p.lng! })}
+              className="w-full flex items-center justify-between bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-2xl px-4 py-3.5 transition-colors hover:bg-emerald-100 dark:hover:bg-emerald-900/30"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-emerald-600 rounded-xl flex items-center justify-center">
+                  <Navigation size={18} className="text-white" />
+                </div>
+                <div className="text-left">
+                  <p className="font-semibold text-sm text-zinc-900 dark:text-white">Get Directions</p>
+                  <p className="text-xs text-zinc-500">Navigate to this property</p>
+                </div>
+              </div>
+              <ChevronRight size={18} className="text-zinc-400" />
+            </button>
+          )}
+
+          {/* Agent contact */}
+          {((p as any).agentPhone || (p as any).agentWhatsApp) && (
+            <div className="bg-zinc-50 dark:bg-zinc-800 rounded-2xl p-4 space-y-3">
+              <p className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Agent</p>
+              {(p as any).agentName && (
+                <p className="font-semibold text-zinc-900 dark:text-white">{(p as any).agentName}</p>
+              )}
+              <div className="flex gap-2">
+                {(p as any).agentPhone && (
+                  <a href={`tel:${(p as any).agentPhone}`}
+                    className="flex-1 flex items-center justify-center gap-2 bg-emerald-600 text-white py-3 rounded-xl font-semibold text-sm">
+                    <Phone size={16} /> Call
+                  </a>
+                )}
+                {(p as any).agentWhatsApp && (
+                  <a
+                    href={`https://wa.me/${(p as any).agentWhatsApp.replace(/\D/g, "")}?text=${encodeURIComponent(`Hi, I'm interested in: ${p.title}`)}`}
+                    target="_blank" rel="noreferrer"
+                    className="flex-1 flex items-center justify-center gap-2 bg-[#25D366] text-white py-3 rounded-xl font-semibold text-sm">
+                    <MessageCircle size={16} /> WhatsApp
+                  </a>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* View tour */}
+          {(p as any).scenes?.length > 0 && (
+            <button onClick={() => setView("tour")}
+              className="w-full py-3.5 bg-zinc-900 dark:bg-zinc-700 text-white rounded-2xl font-semibold text-sm flex items-center justify-center gap-2">
+              🌐 Virtual Tour
+            </button>
+          )}
+
+          {/* Book viewing */}
+          <button onClick={() => setView("book")}
+            className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-semibold text-sm transition-colors">
+            Book a Viewing
+          </button>
+        </div>
+
+        {/* Action bar */}
+        <div className="flex gap-3 px-4 pt-3 pb-2 border-t border-zinc-100 dark:border-zinc-800">
+          <button onClick={toggleFav}
+            className={`w-12 h-12 rounded-2xl flex items-center justify-center border-2 transition-colors ${
+              faved ? "border-red-400 bg-red-50 dark:bg-red-900/20" : "border-zinc-200 dark:border-zinc-700"
+            }`}>
+            <Heart size={20} className={faved ? "text-red-500 fill-red-500" : "text-zinc-400"} />
+          </button>
+          <button onClick={handleShare}
+            className="w-12 h-12 rounded-2xl flex items-center justify-center border-2 border-zinc-200 dark:border-zinc-700">
+            <Share2 size={20} className="text-zinc-400" />
+          </button>
         </div>
       </motion.div>
+
+      {/* Tour overlay */}
+      {view === "tour" && (
+        <motion.div key="tour" className="fixed inset-0 z-[1000] bg-black"
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+          <button onClick={() => setView("detail")}
+            className="absolute top-4 left-4 z-10 w-10 h-10 bg-black/60 rounded-full flex items-center justify-center" style={{ marginTop: "env(safe-area-inset-top)" }}>
+            <X size={20} className="text-white" />
+          </button>
+          <TourViewer scenes={(p as any).scenes ?? []} />
+        </motion.div>
+      )}
+
+      {/* Booking overlay */}
+      {view === "book" && (
+        <motion.div key="book"
+          className="fixed inset-x-0 bottom-0 z-[1000] bg-white dark:bg-zinc-900 rounded-t-3xl shadow-2xl p-5"
+          style={{ maxHeight: "85dvh", paddingBottom: "env(safe-area-inset-bottom)" }}
+          initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
+          transition={{ type: "spring", damping: 28, stiffness: 300 }}>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-display font-bold text-lg text-zinc-900 dark:text-white">Book a Viewing</h3>
+            <button onClick={() => setView("summary")}
+              className="w-9 h-9 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center">
+              <X size={18} />
+            </button>
+          </div>
+          <BookingForm propertyId={p.id} onSuccess={() => setView("summary")} />
+        </motion.div>
+      )}
     </AnimatePresence>
   );
 }

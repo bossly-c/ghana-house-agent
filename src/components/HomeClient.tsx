@@ -1,296 +1,256 @@
 "use client";
-import { useEffect, useState, useCallback, useRef } from "react";
+
 import dynamic from "next/dynamic";
-import { SlidersHorizontal, Search, X } from "lucide-react";
-import TabBar, { type Tab }    from "./TabBar";
-import PropertySheet           from "./PropertySheet";
-import ProfileTab              from "./ProfileTab";
-import SettingsTab             from "./SettingsTab";
-import FavouritesTab           from "./FavouritesTab";
-import { type PropertyListItem, type PropertyFilters } from "@/lib/types";
-import { distanceMetres }      from "@/lib/geo";
+import { useEffect, useRef, useState, useCallback } from "react";
+import { useAuth } from "@/context/AuthContext";
+import TabBar, { Tab } from "@/components/TabBar";
+import PropertySheet from "@/components/PropertySheet";
+import FavouritesTab from "@/components/FavouritesTab";
+import ProfileTab from "@/components/ProfileTab";
+import SettingsTab from "@/components/SettingsTab";
+import AuthModal from "@/components/AuthModal";
+import NavigationPage from "@/components/NavigationPage";
+import type { PropertyListItem, PropertyFilters } from "@/lib/types";
+import { distanceMetres } from "@/lib/geo";
+import { SlidersHorizontal, Locate, Plus } from "lucide-react";
+import Link from "next/link";
 
-const MapView = dynamic(() => import("./MapView"), { ssr: false });
+const MapView = dynamic(() => import("@/components/MapView"), { ssr: false });
 
-const NOTIF_RADIUS_M = 300;
-const notifiedIds    = new Set<string>();
+interface Props { initial: PropertyListItem[]; }
 
-export default function HomeClient() {
-  const [tab, setTab]               = useState<Tab>("map");
-  const [properties, setProperties] = useState<PropertyListItem[]>([]);
-  const [selected, setSelected]     = useState<string | null>(null);
-  const [userPos, setUserPos]       = useState<{ lat: number; lng: number } | null>(null);
-  const [search, setSearch]         = useState("");
-  const [filters, setFilters]       = useState<PropertyFilters>({});
-  const [showFilters, setShowFilters] = useState(false);
-  const [favCount, setFavCount]     = useState(0);
-  const propertiesRef = useRef<PropertyListItem[]>([]);
-  propertiesRef.current = properties;
-
-  /* ── Favourite count sync ───────────────────────────────── */
-  useEffect(() => {
-    const update = () => {
-      try {
-        const ids: string[] = JSON.parse(
-          localStorage.getItem("gha_favs") ?? "[]"
-        );
-        setFavCount(ids.length);
-      } catch {
-        setFavCount(0);
-      }
-    };
-    update();
-    window.addEventListener("storage", update);
-    return () => window.removeEventListener("storage", update);
-  }, []);
-
-  /* ── Transparent status bar (Capacitor only) ────────────── */
-  useEffect(() => {
-    import("@capacitor/status-bar")
-      .then(({ StatusBar, Style }) => {
-        StatusBar.setOverlaysWebView({ overlay: true }).catch(() => {});
-        StatusBar.setStyle({ style: Style.Dark }).catch(() => {});
-      })
-      .catch(() => {});
-  }, []);
-
-  /* ── Request notification permission once ───────────────── */
-  useEffect(() => {
-    import("@capacitor/local-notifications")
-      .then(({ LocalNotifications }) => {
-        LocalNotifications.requestPermissions().catch(() => {});
-      })
-      .catch(() => {});
-  }, []);
-
-  /* ── Fetch properties ───────────────────────────────────── */
-  const fetchProperties = useCallback(async () => {
-    try {
-      const params = new URLSearchParams();
-      if (filters.listing) params.set("listing", filters.listing);
-      if (filters.region)  params.set("region",  filters.region);
-      if (filters.type)    params.set("type",     filters.type);
-      if (search)          params.set("q",        search);
-      const res  = await fetch(`/api/properties?${params}`);
-      const data = await res.json();
-      setProperties(data.properties ?? []);
-    } catch { /* ignore */ }
-  }, [filters, search]);
-
-  useEffect(() => {
-    fetchProperties();
-  }, [fetchProperties]);
-
-  /* ── Geofence check — called by MapView's onUserLocation ── */
-  const checkGeofence = useCallback(
-    async (lat: number, lng: number) => {
-      if (localStorage.getItem("gha_notif") !== "true") return;
-      for (const p of propertiesRef.current) {
-        if (notifiedIds.has(p.id)) continue;
-        // ← skip properties with no GPS coordinates
-        if (p.lat === null || p.lng === null) continue;
-        const dist = distanceMetres(lat, lng, p.lat, p.lng);
-        if (dist <= NOTIF_RADIUS_M) {
-          notifiedIds.add(p.id);
-          try {
-            const { LocalNotifications } = await import(
-              "@capacitor/local-notifications"
-            );
-            await LocalNotifications.schedule({
-              notifications: [
-                {
-                  id:    Math.floor(Math.random() * 1_000_000),
-                  title: "🏠 Property nearby!",
-                  body:  `${p.title} — GH₵${p.price.toLocaleString("en-GH")} is ${Math.round(dist)}m away`,
-                  schedule: { at: new Date(Date.now() + 500) },
-                },
-              ],
-            });
-          } catch { /* ignore — browser doesn't support */ }
-        }
-      }
-    },
-    [] // propertiesRef is a ref so no dep needed
-  );
-
-  /* ── Receive user location from MapView ─────────────────── */
-  const handleUserLocation = useCallback(
-    (loc: { lat: number; lng: number } | null) => {
-      setUserPos(loc);
-      if (loc) checkGeofence(loc.lat, loc.lng);
-    },
-    [checkGeofence]
-  );
-
-  /* ── Client-side text filter ────────────────────────────── */
-  const filtered = properties.filter((p) => {
-    if (!search) return true;
-    const q = search.toLowerCase();
-    return (
-      p.title.toLowerCase().includes(q) ||
-      (p.city?.toLowerCase().includes(q) ?? false) ||
-      (p.area?.toLowerCase().includes(q) ?? false)
-    );
-  });
-
-  // Suppress unused warning — userPos used for future features
-  void userPos;
-
+/* ══════════════════════════════════════════════════
+   Auth gate — shown when user is not logged in
+══════════════════════════════════════════════════ */
+function AuthGate() {
+  const [showAuth, setShowAuth] = useState(false);
   return (
-    <div
-      className="fixed inset-0 flex flex-col"
-      style={{ background: "var(--bg-app)" }}
-    >
-      {/* Content area — leaves room for tab bar */}
-      <div
-        className="flex-1 relative overflow-hidden"
-        style={{ paddingBottom: "calc(56px + var(--sab))" }}
+    <div className="fixed inset-0 flex flex-col items-center justify-center bg-white dark:bg-zinc-950 z-50 gap-6 px-8"
+      style={{ paddingTop: "env(safe-area-inset-top)", paddingBottom: "env(safe-area-inset-bottom)" }}>
+      {/* Logo & name */}
+      <div className="text-center">
+        <h1 className="font-display text-4xl font-bold text-emerald-600 mb-1">Ghana House Agent</h1>
+        <p className="text-zinc-500 dark:text-zinc-400 text-sm">Find &amp; list properties across Ghana</p>
+      </div>
+
+      <div className="w-24 h-24 rounded-3xl bg-emerald-50 dark:bg-emerald-900/30 flex items-center justify-center text-5xl shadow-inner">
+        🏠
+      </div>
+
+      <p className="text-zinc-600 dark:text-zinc-400 text-center text-sm leading-relaxed">
+        Sign in or create an account to browse listings, save favourites, and list your property.
+      </p>
+
+      <button
+        onClick={() => setShowAuth(true)}
+        className="w-full max-w-xs bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-4 rounded-2xl transition-colors text-base shadow-lg"
       >
-        {/* ── MAP TAB ─────────────────────────────────────── */}
+        Sign In / Create Account
+      </button>
+
+      {showAuth && <AuthModal onClose={() => setShowAuth(false)} />}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════
+   Main export
+══════════════════════════════════════════════════ */
+export default function HomeClient({ initial }: Props) {
+  const { user } = useAuth();
+  if (!user) return <AuthGate />;
+  return <AppShell initial={initial} />;
+}
+
+/* ══════════════════════════════════════════════════
+   App shell (only rendered when logged in)
+══════════════════════════════════════════════════ */
+function AppShell({ initial }: Props) {
+  const [properties,    setProperties]    = useState<PropertyListItem[]>(initial);
+  const [selectedId,    setSelectedId]    = useState<number | null>(null);
+  const [tab,           setTab]           = useState<Tab>("map");
+  const [filters,       setFilters]       = useState<PropertyFilters>({});
+  const [locateSignal,  setLocateSignal]  = useState(0);
+  const [userPos,       setUserPos]       = useState<{ lat: number; lng: number } | null>(null);
+  const [navigatingTo,  setNavigatingTo]  = useState<{ name: string; lat: number; lng: number } | null>(null);
+
+  const userPosRef   = useRef<{ lat: number; lng: number } | null>(null);
+  const notifiedRef  = useRef<Set<number>>(new Set());
+
+  /* ── Fetch properties ── */
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (filters.listing) params.set("listing", filters.listing);
+    if (filters.type)    params.set("type",    filters.type);
+    if (filters.region)  params.set("region",  filters.region);
+    if (filters.beds)    params.set("beds",    String(filters.beds));
+
+    fetch(`/api/properties?${params}`)
+      .then(r => r.json())
+      .then(d => setProperties(d.properties ?? []))
+      .catch(() => {});
+  }, [filters]);
+
+  /* ── Geofence notifications ── */
+  const handleUserLocation = useCallback(async (lat: number, lng: number) => {
+    userPosRef.current = { lat, lng };
+    setUserPos({ lat, lng });
+
+    if (typeof window === "undefined") return;
+    if (localStorage.getItem("gha_notif") !== "true") return;
+
+    const { LocalNotifications } = await import("@capacitor/local-notifications");
+    for (const p of properties) {
+      if (p.lat === null || p.lng === null) continue;
+      if (notifiedRef.current.has(p.id)) continue;
+      const d = distanceMetres(lat, lng, p.lat!, p.lng!);
+      if (d <= 300) {
+        notifiedRef.current.add(p.id);
+        await LocalNotifications.schedule({
+          notifications: [{
+            id:    p.id,
+            title: "Nearby Property 🏠",
+            body:  `${p.title} is within 300 m of you!`,
+            // No custom sound — follows system default
+          }],
+        });
+      }
+    }
+  }, [properties]);
+
+  const selected = properties.find(p => p.id === selectedId) ?? null;
+
+  /* ── Navigate to property handler ── */
+  const handleNavigate = useCallback((dest: { name: string; lat: number; lng: number }) => {
+    setSelectedId(null);
+    setNavigatingTo(dest);
+  }, []);
+
+  /* ── Full-screen NavigationPage ── */
+  if (navigatingTo) {
+    return (
+      <NavigationPage
+        onBack={() => setNavigatingTo(null)}
+        userLocation={userPos}
+        initialDestination={navigatingTo}
+      />
+    );
+  }
+
+  /* ── Main UI ── */
+  return (
+    <div className="fixed inset-0 flex flex-col bg-zinc-100 dark:bg-zinc-950">
+
+      {/* ── App header ── */}
+      <header
+        className="flex-none bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 flex items-center px-4 z-[999]"
+        style={{
+          paddingTop: "env(safe-area-inset-top)",
+          height: "calc(52px + env(safe-area-inset-top))",
+        }}
+      >
+        <h1 className="font-display text-xl font-bold text-emerald-600 flex-1 tracking-tight">
+          Ghana House Agent
+        </h1>
         {tab === "map" && (
-          <>
-            {/* Search bar — respects notch */}
-            <div
-              className="absolute left-0 right-0 z-30 px-3"
-              style={{ top: "calc(var(--sat) + 8px)" }}
-            >
-              <div
-                className="flex items-center gap-2 rounded-2xl px-3 py-2.5 shadow-lg"
-                style={{
-                  background: "var(--surface)",
-                  border:     "1px solid var(--border-col)",
-                }}
-              >
-                <Search size={17} style={{ color: "var(--text-muted)" }} />
-                <input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search city, area or title…"
-                  className="flex-1 bg-transparent text-sm outline-none"
-                  style={{ color: "var(--text-main)" }}
-                />
-                {search && (
-                  <button onClick={() => setSearch("")} type="button">
-                    <X size={16} style={{ color: "var(--text-muted)" }} />
-                  </button>
-                )}
-                <button
-                  onClick={() => setShowFilters((f) => !f)}
-                  type="button"
-                  className="p-1 rounded-lg transition"
-                  style={{
-                    background: showFilters ? "#0c3b2e" : "transparent",
-                  }}
-                >
-                  <SlidersHorizontal
-                    size={17}
-                    style={{
-                      color: showFilters ? "#f2b70a" : "var(--text-muted)",
-                    }}
-                  />
-                </button>
-              </div>
-
-              {/* Filter pills */}
-              {showFilters && (
-                <div
-                  className="mt-2 rounded-2xl p-3 flex flex-wrap gap-2 shadow-lg"
-                  style={{
-                    background: "var(--surface)",
-                    border:     "1px solid var(--border-col)",
-                  }}
-                >
-                  {(["rent", "sale"] as const).map((l) => (
-                    <button
-                      key={l}
-                      type="button"
-                      onClick={() =>
-                        setFilters((f) => ({
-                          ...f,
-                          listing: f.listing === l ? undefined : l,
-                        }))
-                      }
-                      className="px-3 py-1 rounded-full text-xs font-extrabold transition"
-                      style={{
-                        background:
-                          filters.listing === l
-                            ? l === "rent"
-                              ? "#dc2626"
-                              : "#16a34a"
-                            : "var(--surface-2)",
-                        color:  filters.listing === l ? "#fff" : "var(--text-muted)",
-                        border: "1px solid var(--border-col)",
-                      }}
-                    >
-                      {l === "rent" ? "🔴 Rent" : "🟢 Sale"}
-                    </button>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() => setFilters({})}
-                    className="px-3 py-1 rounded-full text-xs font-semibold"
-                    style={{
-                      background: "var(--surface-2)",
-                      border:     "1px solid var(--border-col)",
-                      color:      "var(--text-muted)",
-                    }}
-                  >
-                    Clear
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Map — no userPos prop, MapView handles location itself */}
-            <MapView
-              properties={filtered}
-              selectedId={selected}
-              onSelect={setSelected}
-              onUserLocation={handleUserLocation}
-            />
-
-            {selected && (
-              <PropertySheet
-                propertyId={selected}
-                onClose={() => setSelected(null)}
-              />
-            )}
-          </>
-        )}
-
-        {/* ── FAVOURITES TAB ──────────────────────────────── */}
-        {tab === "favourites" && (
-          <div
-            className="h-full flex flex-col"
-            style={{ paddingTop: "calc(var(--sat) + 1rem)" }}
+          <button
+            onClick={() => setLocateSignal(s => s + 1)}
+            className="w-9 h-9 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center"
+            aria-label="Locate me"
           >
-            <FavouritesTab />
+            <Locate size={18} className="text-zinc-600 dark:text-zinc-300" />
+          </button>
+        )}
+      </header>
+
+      {/* ── Content ── */}
+      <main
+        className="flex-1 relative overflow-hidden"
+        style={{ paddingBottom: "calc(60px + env(safe-area-inset-bottom))" }}
+      >
+        {/* MAP */}
+        <div className={`absolute inset-0 ${tab === "map" ? "block" : "hidden"}`}>
+          <MapView
+            properties={properties}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+            onUserLocation={handleUserLocation}
+            locateSignal={locateSignal}
+          />
+
+          {/* Filter chips */}
+          <div className="absolute top-3 left-3 right-3 z-[500]">
+            <FilterBar filters={filters} onChange={setFilters} />
+          </div>
+
+          {/* List Property FAB */}
+          <Link
+            href="/list"
+            className="absolute z-[500] right-4 flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-4 py-3 rounded-2xl shadow-lg transition-colors"
+            style={{ bottom: "76px" }}
+          >
+            <Plus size={18} />
+            <span className="text-sm">List Property</span>
+          </Link>
+        </div>
+
+        {/* SAVED */}
+        {tab === "saved" && (
+          <div className="absolute inset-0 overflow-y-auto">
+            <FavouritesTab onSelect={(id) => { setSelectedId(id); setTab("map"); }} />
           </div>
         )}
 
-        {/* ── PROFILE TAB ─────────────────────────────────── */}
+        {/* PROFILE */}
         {tab === "profile" && (
-          <div
-            className="h-full flex flex-col"
-            style={{ paddingTop: "calc(var(--sat) + 1rem)" }}
-          >
+          <div className="absolute inset-0 overflow-y-auto">
             <ProfileTab />
           </div>
         )}
 
-        {/* ── SETTINGS TAB ────────────────────────────────── */}
+        {/* SETTINGS */}
         {tab === "settings" && (
-          <div
-            className="h-full flex flex-col"
-            style={{ paddingTop: "calc(var(--sat) + 1rem)" }}
-          >
+          <div className="absolute inset-0 overflow-y-auto">
             <SettingsTab />
           </div>
         )}
-      </div>
+      </main>
 
-      {/* Tab bar */}
-      <TabBar active={tab} onChange={setTab} favCount={favCount} />
+      {/* ── Tab bar ── */}
+      <TabBar active={tab} onChange={setTab} />
+
+      {/* ── Property sheet ── */}
+      {selected && (
+        <PropertySheet
+          property={selected}
+          onClose={() => setSelectedId(null)}
+          onNavigate={handleNavigate}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ── Filter bar ── */
+function FilterBar({
+  filters, onChange,
+}: { filters: PropertyFilters; onChange: (f: PropertyFilters) => void }) {
+  return (
+    <div className="flex gap-2 overflow-x-auto scrollbar-hide">
+      <button className="flex-none flex items-center gap-1 bg-white dark:bg-zinc-800 px-3 py-1.5 rounded-full shadow text-xs font-medium text-zinc-700 dark:text-zinc-200">
+        <SlidersHorizontal size={13} /> Filter
+      </button>
+      {(["rent","sale"] as const).map(l => (
+        <button key={l}
+          onClick={() => onChange({ ...filters, listing: filters.listing === l ? undefined : l })}
+          className={`flex-none px-3 py-1.5 rounded-full shadow text-xs font-medium capitalize transition-colors ${
+            filters.listing === l
+              ? "bg-emerald-600 text-white"
+              : "bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200"
+          }`}>
+          {l === "rent" ? "🔴 Rent" : "🟢 Sale"}
+        </button>
+      ))}
     </div>
   );
 }
