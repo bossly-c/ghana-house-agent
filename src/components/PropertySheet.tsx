@@ -330,7 +330,7 @@ export default function PropertySheet({ property: p, onClose, onNavigate }: Prop
           >
             <X size={20} className="text-white" />
           </button>
-          <TourViewer scenes={p.scenes ?? []} />
+          <TourViewer scenes={p.scenes ?? []} title={p.title} />
         </motion.div>
       )}
 
