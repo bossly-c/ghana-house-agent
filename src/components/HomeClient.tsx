@@ -98,7 +98,10 @@ interface NominatimResult {
 ══════════════════════════════════════════════════ */
 function AppShell({ initial }: Props) {
   const [properties,   setProperties]   = useState<PropertyListItem[]>(initial ?? []);
-  const [selectedId,   setSelectedId]   = useState<number | null>(null);
+
+  // ↓ FIX 1: string | null — p.id from the API is always a string
+  const [selectedId,   setSelectedId]   = useState<string | null>(null);
+
   const [tab,          setTab]          = useState<Tab>("map");
   const [filters,      setFilters]      = useState<PropertyFilters>({});
   const [locateSignal, setLocateSignal] = useState(0);
@@ -113,7 +116,8 @@ function AppShell({ initial }: Props) {
   const [searching,     setSearching]     = useState(false);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const notifiedRef = useRef<Set<string | number>>(new Set());
+  // ↓ FIX 2: Set<string> — p.id is a string, notification id cast separately
+  const notifiedRef = useRef<Set<string>>(new Set());
 
   /* ── Fetch properties ── */
   useEffect(() => {
@@ -160,18 +164,25 @@ function AppShell({ initial }: Props) {
     const { LocalNotifications } = await import("@capacitor/local-notifications");
     for (const p of properties) {
       if (p.lat === null || p.lng === null) continue;
-      if (notifiedRef.current.has(p.id)) continue;
+      // ↓ FIX 3: use String(p.id) for the Set, Number(p.id) for LocalNotifications
+      const sid = String(p.id);
+      if (notifiedRef.current.has(sid)) continue;
       const d = distanceMetres(lat, lng, p.lat!, p.lng!);
       if (d <= 300) {
-        notifiedRef.current.add(p.id);
+        notifiedRef.current.add(sid);
         await LocalNotifications.schedule({
-  notifications: [{ id: Number(p.id), title: "Nearby Property 🏠", body: `${p.title} is within 300 m of you!` }],
-});
+          notifications: [{
+            id:    Number(p.id),   // LocalNotifications requires number
+            title: "Nearby Property 🏠",
+            body:  `${p.title} is within 300 m of you!`,
+          }],
+        });
       }
     }
   }, [properties]);
 
-  const selected = properties.find(p => p.id === selectedId) ?? null;
+  // ↓ FIX 4: compare using String(p.id) so string === string
+  const selected = properties.find(p => String(p.id) === selectedId) ?? null;
 
   const handleNavigate = useCallback((dest: { name: string; lat: number; lng: number }) => {
     setSelectedId(null);
@@ -213,7 +224,6 @@ function AppShell({ initial }: Props) {
 
         {tab === "map" && (
           <>
-            {/* Search toggle */}
             <button
               onClick={() => setSearchOpen(o => !o)}
               className="w-10 h-10 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center"
@@ -222,7 +232,6 @@ function AppShell({ initial }: Props) {
               <Search size={17} className="text-zinc-600 dark:text-zinc-300" />
             </button>
 
-            {/* Locate me */}
             <button
               onClick={() => setLocateSignal(s => s + 1)}
               className="w-10 h-10 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center"
@@ -244,8 +253,9 @@ function AppShell({ initial }: Props) {
         >
           <MapView
             properties={properties}
-            selectedId={selectedId}
-            onSelect={setSelectedId}
+            // ↓ FIX 5: MapView.onSelect gives a number — cast to string on entry
+            selectedId={selectedId !== null ? Number(selectedId) : null}
+            onSelect={id => setSelectedId(String(id))}
             onUserLocation={handleUserLocation}
             locateSignal={locateSignal}
             flyToSignal={flyToSignal}
@@ -255,7 +265,6 @@ function AppShell({ initial }: Props) {
           {searchOpen && (
             <div className="absolute top-2 left-2 right-2 z-[600]">
               <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl overflow-hidden border border-zinc-200 dark:border-zinc-700">
-                {/* Input row */}
                 <div className="flex items-center gap-2 px-3 py-2">
                   <Search size={16} className="text-zinc-400 flex-none" />
                   <input
@@ -274,7 +283,6 @@ function AppShell({ initial }: Props) {
                   </button>
                 </div>
 
-                {/* Results */}
                 {searchResults.length > 0 && (
                   <ul className="border-t border-zinc-100 dark:border-zinc-800 max-h-64 overflow-y-auto">
                     {searchResults.map(r => (
@@ -326,7 +334,8 @@ function AppShell({ initial }: Props) {
         {/* SAVED TAB */}
         {tab === "saved" && (
           <div className="absolute inset-0 overflow-y-auto" style={{ paddingBottom: "calc(60px + env(safe-area-inset-bottom))" }}>
-            <FavouritesTab onSelect={id => { setSelectedId(id); setTab("map"); }} />
+            {/* ↓ FIX 6: cast id to string */}
+            <FavouritesTab onSelect={id => { setSelectedId(String(id)); setTab("map"); }} />
           </div>
         )}
 
