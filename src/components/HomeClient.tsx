@@ -165,8 +165,8 @@ function AppShell({ initial }: Props) {
       if (d <= 300) {
         notifiedRef.current.add(p.id);
         await LocalNotifications.schedule({
-          notifications: [{ id: p.id, title: "Nearby Property 🏠", body: `${p.title} is within 300 m of you!` }],
-        });
+  notifications: [{ id: Number(p.id), title: "Nearby Property 🏠", body: `${p.title} is within 300 m of you!` }],
+});
       }
     }
   }, [properties]);
