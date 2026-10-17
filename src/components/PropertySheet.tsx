@@ -25,17 +25,17 @@ export default function PropertySheet({ property: p, onClose, onNavigate }: Prop
   const [faved,  setFaved]  = useState(false);
   const [imgIdx, setImgIdx] = useState(0);
 
-  const photos: string[] = (p as any).photos ?? (p as any).images ?? [];
+  const photos: string[] = p.photos ?? p.images ?? [];
 
-  // ── Favourites (string ids to match p.id type) ──────────────────────────
+  // ── Favourites ───────────────────────────────────────────────────────────
   useEffect(() => {
     const favs: string[] = JSON.parse(localStorage.getItem("gha_favs") ?? "[]");
-    setFaved(favs.includes(String(p.id)));   // ✅ was number[], p.id is string
+    setFaved(favs.includes(String(p.id)));
   }, [p.id]);
 
   const toggleFav = () => {
     const favs: string[] = JSON.parse(localStorage.getItem("gha_favs") ?? "[]");
-    const sid  = String(p.id);              // ✅ cast once, reuse
+    const sid  = String(p.id);
     const next = faved
       ? favs.filter((x) => x !== sid)
       : [...favs, sid];
@@ -54,12 +54,12 @@ export default function PropertySheet({ property: p, onClose, onNavigate }: Prop
 
   const canNavigate = p.lat !== null && p.lng !== null && isFinite(p.lat!) && isFinite(p.lng!);
 
-  const units: any[]  = (p as any).units ?? [];
-  const isCompound    = (p as any).isCompound && units.length > 0;
-  const lowestPrice   = isCompound
-    ? Math.min(...units.map((u: any) => Number(u.price)))
+  const units      = p.units ?? [];
+  const isCompound = p.isCompound && units.length > 0;
+  const lowestPrice = isCompound
+    ? Math.min(...units.map((u) => Number(u.price)))
     : Number(p.price ?? 0);
-  const priceLabel    = isCompound
+  const priceLabel = isCompound
     ? `from GH₵ ${lowestPrice.toLocaleString()}`
     : `GH₵ ${lowestPrice.toLocaleString()}`;
 
@@ -162,9 +162,9 @@ export default function PropertySheet({ property: p, onClose, onNavigate }: Prop
           {!isCompound && (
             <div className="flex gap-3">
               {[
-                { icon: <Bed size={16} />,        val: (p as any).beds  ?? (p as any).bedrooms,  label: "Beds"  },
-                { icon: <Bath size={16} />,       val: (p as any).baths ?? (p as any).bathrooms, label: "Baths" },
-                { icon: <LayoutGrid size={16} />, val: (p as any).halls,                         label: "Halls" },
+                { icon: <Bed size={16} />,        val: p.beds,  label: "Beds"  },
+                { icon: <Bath size={16} />,       val: p.baths, label: "Baths" },
+                { icon: <LayoutGrid size={16} />, val: p.halls, label: "Halls" },
               ].map(({ icon, val, label }) =>
                 val !== undefined && val !== null ? (
                   <div
@@ -184,7 +184,7 @@ export default function PropertySheet({ property: p, onClose, onNavigate }: Prop
           {isCompound && units.length > 0 && (
             <div className="space-y-2">
               <p className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Unit Types</p>
-              {units.map((u: any, i: number) => (
+              {units.map((u, i) => (
                 <div
                   key={i}
                   className="bg-zinc-50 dark:bg-zinc-800 rounded-xl p-3 flex items-center justify-between gap-3"
@@ -242,24 +242,24 @@ export default function PropertySheet({ property: p, onClose, onNavigate }: Prop
           )}
 
           {/* Agent contact */}
-          {((p as any).agentPhone || (p as any).agentWhatsApp) && (
+          {(p.agentPhone || p.agentWhatsApp) && (
             <div className="bg-zinc-50 dark:bg-zinc-800 rounded-2xl p-4 space-y-3">
               <p className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Agent</p>
-              {(p as any).agentName && (
-                <p className="font-semibold text-zinc-900 dark:text-white">{(p as any).agentName}</p>
+              {p.agentName && (
+                <p className="font-semibold text-zinc-900 dark:text-white">{p.agentName}</p>
               )}
               <div className="flex gap-2">
-                {(p as any).agentPhone && (
+                {p.agentPhone && (
                   <a
-                    href={`tel:${(p as any).agentPhone}`}
+                    href={`tel:${p.agentPhone}`}
                     className="flex-1 flex items-center justify-center gap-2 bg-emerald-600 text-white py-3 rounded-xl font-semibold text-sm"
                   >
                     <Phone size={16} /> Call
                   </a>
                 )}
-                {(p as any).agentWhatsApp && (
+                {p.agentWhatsApp && (
                   <a
-                    href={`https://wa.me/${(p as any).agentWhatsApp.replace(/\D/g, "")}?text=${encodeURIComponent(`Hi, I'm interested in: ${p.title}`)}`}
+                    href={`https://wa.me/${p.agentWhatsApp.replace(/\D/g, "")}?text=${encodeURIComponent(`Hi, I'm interested in: ${p.title}`)}`}
                     target="_blank"
                     rel="noreferrer"
                     className="flex-1 flex items-center justify-center gap-2 bg-[#25D366] text-white py-3 rounded-xl font-semibold text-sm"
@@ -272,7 +272,7 @@ export default function PropertySheet({ property: p, onClose, onNavigate }: Prop
           )}
 
           {/* Virtual tour */}
-          {(p as any).scenes?.length > 0 && (
+          {p.scenes && p.scenes.length > 0 && (
             <button
               onClick={() => setView("tour")}
               className="w-full py-3.5 bg-zinc-900 dark:bg-zinc-700 text-white rounded-2xl font-semibold text-sm flex items-center justify-center gap-2"
@@ -330,7 +330,7 @@ export default function PropertySheet({ property: p, onClose, onNavigate }: Prop
           >
             <X size={20} className="text-white" />
           </button>
-          <TourViewer scenes={(p as any).scenes ?? []} />
+          <TourViewer scenes={p.scenes ?? []} />
         </motion.div>
       )}
 

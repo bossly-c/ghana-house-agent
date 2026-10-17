@@ -1,95 +1,103 @@
 export type ListingType = "rent" | "sale";
 
 export type PropertyUnit = {
-  id: string;
-  propertyId: string;
-  unitType: string;
-  bedrooms: number;
-  bathrooms: number;
-  halls: number;
-  price: number;
+  id:          string;
+  propertyId:  string;
+  unitType:    string;
+  bedrooms:    number;
+  bathrooms:   number;
+  halls:       number;
+  price:       number;
   pricePeriod: string;
-  available: boolean;
+  available:   boolean;
   description: string | null;
-  position: number;
+  position:    number;
 };
 
 export type TourSceneDto = {
-  id: string;
+  id:       string;
   roomName: string;
-  panoUrl: string;
+  panoUrl:  string;
   position: number;
 };
 
 export type PropertyListItem = {
-  id: string;
-  listingType: ListingType;
+  id:           string;
+  listingType:  ListingType;
   propertyType: string;
-  region: string;
-  address: string;
-  area?: string;       // ← added: used in HomeClient search filter
-  city?: string;       // ← added: used in HomeClient search filter
-  title: string;
-  lat: number | null;
-  lng: number | null;
-  price: number;
-  pricePeriod: string;
-  beds: number;
-  baths: number;
-  photos: string[];
-  isCompound: boolean;
-  createdAt: string;
+  region:       string;
+  address:      string;
+  area?:        string;
+  city?:        string;
+  title:        string;
+  lat:          number | null;
+  lng:          number | null;
+  price:        number;
+  pricePeriod:  string;
+  beds:         number;
+  baths:        number;
+  halls?:       number;          // ✅ added
+  photos:       string[];
+  images?:      string[];        // ✅ added — API sometimes returns images not photos
+  description?: string | null;   // ✅ added
+  isCompound:   boolean;
+  units?:       PropertyUnit[];  // ✅ added — compound properties
+  scenes?:      TourSceneDto[];  // ✅ added — virtual tour
+  agentName?:   string;          // ✅ added
+  agentPhone?:  string;          // ✅ added
+  agentWhatsApp?: string | null; // ✅ added
+  createdAt:    string;
 };
 
 export type PropertyDetail = {
-  id: string;
-  listingType: ListingType;
-  propertyType: string;
-  region: string;
-  address: string;
-  area: string;
-  city: string;
-  title: string;
-  description: string | null;
-  lat: number | null;
-  lng: number | null;
-  beds: number;
-  baths: number;
-  halls: number;
-  price: number;
-  pricePeriod: string;
-  amenities: string[];
-  photos: string[];
-  images: string[];
+  id:            string;
+  listingType:   ListingType;
+  propertyType:  string;
+  region:        string;
+  address:       string;
+  area:          string;
+  city:          string;
+  title:         string;
+  description:   string | null;
+  lat:           number | null;
+  lng:           number | null;
+  beds:          number;
+  baths:         number;
+  halls:         number;
+  price:         number;
+  pricePeriod:   string;
+  amenities:     string[];
+  photos:        string[];
+  images:        string[];
   availableDays: string[];
   availableFrom: string;
-  availableTo: string;
-  viewingDays: string[];
-  viewingTime: string;
-  agentName: string;
-  agentPhone: string;
+  availableTo:   string;
+  viewingDays:   string[];
+  viewingTime:   string;
+  agentName:     string;
+  agentPhone:    string;
   agentWhatsApp: string | null;
-  views: number;
-  isCompound: boolean;
-  units: PropertyUnit[];
-  scenes: TourSceneDto[];
-  createdAt: string;
+  views:         number;
+  isCompound:    boolean;
+  units:         PropertyUnit[];
+  scenes:        TourSceneDto[];
+  createdAt:     string;
 };
 
 export type PropertyFilters = {
-  listing?: ListingType;
-  type?: string;
-  region?: string;
+  listing?:  ListingType;
+  type?:     string;
+  region?:   string;
   minPrice?: number;
   maxPrice?: number;
-  beds?: number;
+  beds?:     number;
 };
 
 export type AgentDto = {
-  id: string;
-  name: string;
-  phone: string;
+  id:       string;
+  name:     string;
+  phone:    string;
   whatsapp: string | null;
-  email: string | null;
+  email:    string | null;
   photoUrl: string | null;
 };
