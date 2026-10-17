@@ -113,7 +113,7 @@ function AppShell({ initial }: Props) {
   const [searching,     setSearching]     = useState(false);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const notifiedRef = useRef<Set<number>>(new Set());
+  const notifiedRef = useRef<Set<string | number>>(new Set());
 
   /* ── Fetch properties ── */
   useEffect(() => {
