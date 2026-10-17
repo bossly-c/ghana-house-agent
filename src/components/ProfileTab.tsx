@@ -46,9 +46,9 @@ export default function ProfileTab() {
     <div className="flex-1 overflow-y-auto thin-scroll px-5 pb-10">
       {/* Avatar */}
       <div className="flex flex-col items-center gap-3 py-8">
-        {user.profilePicUrl ? (
+        {user.avatar ? (                              {/* ✅ was profilePicUrl */}
           <img
-            src={user.profilePicUrl}
+            src={user.avatar}                         {/* ✅ was profilePicUrl */}
             className="w-24 h-24 rounded-full object-cover border-4 border-[#f2b70a]"
             alt="profile"
           />
