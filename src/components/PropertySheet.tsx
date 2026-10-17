@@ -356,7 +356,13 @@ export default function PropertySheet({ property: p, onClose, onNavigate }: Prop
               <X size={18} />
             </button>
           </div>
-          <BookingForm propertyId={p.id} onSuccess={() => setView("summary")} />
+          <BookingForm
+  propertyId={p.id}
+  viewingDays={p.viewingDays ?? []}
+  viewingTime={p.viewingTime  ?? "By appointment"}
+  listingType={p.listingType}
+  onSuccess={() => setView("summary")}
+/>
         </motion.div>
       )}
     </AnimatePresence>

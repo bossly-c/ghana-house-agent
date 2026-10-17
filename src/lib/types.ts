@@ -22,31 +22,33 @@ export type TourSceneDto = {
 };
 
 export type PropertyListItem = {
-  id:           string;
-  listingType:  ListingType;
-  propertyType: string;
-  region:       string;
-  address:      string;
-  area?:        string;
-  city?:        string;
-  title:        string;
-  lat:          number | null;
-  lng:          number | null;
-  price:        number;
-  pricePeriod:  string;
-  beds:         number;
-  baths:        number;
-  halls?:       number;          // ✅ added
-  photos:       string[];
-  images?:      string[];        // ✅ added — API sometimes returns images not photos
-  description?: string | null;   // ✅ added
-  isCompound:   boolean;
-  units?:       PropertyUnit[];  // ✅ added — compound properties
-  scenes?:      TourSceneDto[];  // ✅ added — virtual tour
-  agentName?:   string;          // ✅ added
-  agentPhone?:  string;          // ✅ added
-  agentWhatsApp?: string | null; // ✅ added
-  createdAt:    string;
+  id:             string;
+  listingType:    ListingType;
+  propertyType:   string;
+  region:         string;
+  address:        string;
+  area?:          string;
+  city?:          string;
+  title:          string;
+  lat:            number | null;
+  lng:            number | null;
+  price:          number;
+  pricePeriod:    string;
+  beds:           number;
+  baths:          number;
+  halls?:         number;
+  photos:         string[];
+  images?:        string[];
+  description?:   string | null;
+  isCompound:     boolean;
+  units?:         PropertyUnit[];
+  scenes?:        TourSceneDto[];
+  agentName?:     string;
+  agentPhone?:    string;
+  agentWhatsApp?: string | null;
+  viewingDays?:   string[];       // ✅ added
+  viewingTime?:   string;         // ✅ added
+  createdAt:      string;
 };
 
 export type PropertyDetail = {
