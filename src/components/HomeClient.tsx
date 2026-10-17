@@ -98,10 +98,7 @@ interface NominatimResult {
 ══════════════════════════════════════════════════ */
 function AppShell({ initial }: Props) {
   const [properties,   setProperties]   = useState<PropertyListItem[]>(initial ?? []);
-
-  // ↓ FIX 1: string | null — p.id from the API is always a string
   const [selectedId,   setSelectedId]   = useState<string | null>(null);
-
   const [tab,          setTab]          = useState<Tab>("map");
   const [filters,      setFilters]      = useState<PropertyFilters>({});
   const [locateSignal, setLocateSignal] = useState(0);
@@ -116,7 +113,6 @@ function AppShell({ initial }: Props) {
   const [searching,     setSearching]     = useState(false);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // ↓ FIX 2: Set<string> — p.id is a string, notification id cast separately
   const notifiedRef = useRef<Set<string>>(new Set());
 
   /* ── Fetch properties ── */
@@ -164,7 +160,6 @@ function AppShell({ initial }: Props) {
     const { LocalNotifications } = await import("@capacitor/local-notifications");
     for (const p of properties) {
       if (p.lat === null || p.lng === null) continue;
-      // ↓ FIX 3: use String(p.id) for the Set, Number(p.id) for LocalNotifications
       const sid = String(p.id);
       if (notifiedRef.current.has(sid)) continue;
       const d = distanceMetres(lat, lng, p.lat!, p.lng!);
@@ -172,7 +167,7 @@ function AppShell({ initial }: Props) {
         notifiedRef.current.add(sid);
         await LocalNotifications.schedule({
           notifications: [{
-            id:    Number(p.id),   // LocalNotifications requires number
+            id:    Number(p.id),
             title: "Nearby Property 🏠",
             body:  `${p.title} is within 300 m of you!`,
           }],
@@ -181,7 +176,6 @@ function AppShell({ initial }: Props) {
     }
   }, [properties]);
 
-  // ↓ FIX 4: compare using String(p.id) so string === string
   const selected = properties.find(p => String(p.id) === selectedId) ?? null;
 
   const handleNavigate = useCallback((dest: { name: string; lat: number; lng: number }) => {
@@ -253,7 +247,6 @@ function AppShell({ initial }: Props) {
         >
           <MapView
             properties={properties}
-            // ↓ FIX 5: MapView.onSelect gives a number — cast to string on entry
             selectedId={selectedId !== null ? Number(selectedId) : null}
             onSelect={id => setSelectedId(String(id))}
             onUserLocation={handleUserLocation}
@@ -331,10 +324,9 @@ function AppShell({ initial }: Props) {
           </div>
         </div>
 
-        {/* SAVED TAB */}
-        {tab === "saved" && (
+        {/* FAVOURITES TAB — was incorrectly "saved", must match Tab type */}
+        {tab === "favourites" && (
           <div className="absolute inset-0 overflow-y-auto" style={{ paddingBottom: "calc(60px + env(safe-area-inset-bottom))" }}>
-            {/* ↓ FIX 6: cast id to string */}
             <FavouritesTab onSelect={id => { setSelectedId(String(id)); setTab("map"); }} />
           </div>
         )}
