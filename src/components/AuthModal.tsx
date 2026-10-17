@@ -55,7 +55,7 @@ export default function AuthModal({ onClose }: Props) {
       const data = await res.json();
       if (!res.ok) { setError(data.error ?? "Something went wrong"); return; }
 
-      login(data.token, data.user as UserPayload);
+     login(data.token, { ...data.user, id: Number(data.user.id) });
       onClose();
     } catch {
       setError("Network error — please try again.");
