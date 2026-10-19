@@ -1,6 +1,6 @@
 export type ListingType = "rent" | "sale";
 
-export type PropertyUnit = {
+type PropertyUnit = {
   id:          string;
   propertyId:  string;
   unitType:    string;
@@ -46,8 +46,10 @@ export type PropertyListItem = {
   agentName?:     string;
   agentPhone?:    string;
   agentWhatsApp?: string | null;
-  viewingDays?:   string[];       // ✅ added
-  viewingTime?:   string;         // ✅ added
+  viewingDays?:   string[];
+  viewingTime?:   string;
+  isVisible?:     boolean;          // ✅ new — owner can hide from map
+  agentId?:       string;           // ✅ new — to identify owner's listings
   createdAt:      string;
 };
 
@@ -81,6 +83,7 @@ export type PropertyDetail = {
   agentWhatsApp: string | null;
   views:         number;
   isCompound:    boolean;
+  isVisible:     boolean;
   units:         PropertyUnit[];
   scenes:        TourSceneDto[];
   createdAt:     string;

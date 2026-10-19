@@ -58,6 +58,9 @@ export async function listProperties(
 ): Promise<PropertyListItem[]> {
   const conditions: ReturnType<typeof eq>[] = [];
 
+  // ✅ Always hide invisible properties from the map
+  conditions.push(eq(properties.isVisible, true));
+
   if (filters.listing) {
     conditions.push(eq(properties.listingType, filters.listing));
   }
@@ -80,7 +83,7 @@ export async function listProperties(
   const rows = await db
     .select()
     .from(properties)
-    .where(conditions.length ? and(...conditions) : undefined)
+    .where(and(...conditions))
     .orderBy(desc(properties.createdAt))
     .limit(500);
 

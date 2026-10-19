@@ -115,19 +115,27 @@ function AppShell({ initial }: Props) {
 
   const notifiedRef = useRef<Set<string>>(new Set());
 
-  /* ── Fetch properties ── */
-  useEffect(() => {
-    const params = new URLSearchParams();
-    if (filters.listing) params.set("listing", filters.listing);
-    if (filters.type)    params.set("type",    filters.type);
-    if (filters.region)  params.set("region",  filters.region);
-    if (filters.beds)    params.set("beds",    String(filters.beds));
+  /* ── Fetch properties (initial + polling every 30s) ── */
+useEffect(() => {
+  const params = new URLSearchParams();
+  if (filters.listing) params.set("listing", filters.listing);
+  if (filters.type)    params.set("type",    filters.type);
+  if (filters.region)  params.set("region",  filters.region);
+  if (filters.beds)    params.set("beds",    String(filters.beds));
 
-    fetch(`/api/properties?${params}`)
-      .then(r => r.json())
-      .then(d => setProperties(Array.isArray(d?.properties) ? d.properties : []))
-      .catch(() => {});
-  }, [filters]);
+  async function fetchProps() {
+    try {
+      const r = await fetch(`/api/properties?${params}`);
+      const d = await r.json();
+      setProperties(Array.isArray(d?.properties) ? d.properties : []);
+    } catch { /* ignore */ }
+  }
+
+  fetchProps(); // immediate on mount / filter change
+
+  const interval = setInterval(fetchProps, 30_000); // poll every 30s
+  return () => clearInterval(interval);
+}, [filters]);
 
   /* ── Nominatim search (debounced 500ms) ── */
   useEffect(() => {
@@ -246,13 +254,13 @@ function AppShell({ initial }: Props) {
           style={{ paddingBottom: "calc(60px + env(safe-area-inset-bottom))" }}
         >
           <MapView
-            properties={properties}
-            selectedId={selectedId !== null ? Number(selectedId) : null}
-            onSelect={id => setSelectedId(String(id))}
-            onUserLocation={handleUserLocation}
-            locateSignal={locateSignal}
-            flyToSignal={flyToSignal}
-          />
+  properties={properties}
+  selectedId={selectedId}                    // ← was: selectedId !== null ? Number(selectedId) : null
+  onSelect={id => setSelectedId(id)}         // ← was: onSelect={id => setSelectedId(String(id))}
+  onUserLocation={handleUserLocation}
+  locateSignal={locateSignal}
+  flyToSignal={flyToSignal}
+/>
 
           {/* ── Search bar overlay ── */}
           {searchOpen && (

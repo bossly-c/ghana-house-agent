@@ -32,12 +32,11 @@ export const properties = pgTable("properties", {
   agentId:      uuid("agent_id").notNull().references(() => agents.id, { onDelete: "cascade" }),
 
   title:        text("title").notNull(),
-  listingType:  text("listing_type").notNull(),        // 'rent' | 'sale'
+  listingType:  text("listing_type").notNull(),
   propertyType: text("property_type").notNull(),
-  price:        integer("price").notNull(),             // GHS — for compounds: lowest unit price
+  price:        integer("price").notNull(),
   pricePeriod:  text("price_period").notNull().default("month"),
 
-  // compound flag
   isCompound:   boolean("is_compound").notNull().default(false),
 
   region:       text("region").notNull(),
@@ -65,6 +64,7 @@ export const properties = pgTable("properties", {
 
   status:       text("status").notNull().default("available"),
   featured:     boolean("featured").notNull().default(false),
+  isVisible:    boolean("is_visible").notNull().default(true),   // ✅ ADD THIS LINE
   views:        integer("views").notNull().default(0),
 
   createdAt:    timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

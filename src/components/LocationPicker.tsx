@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { GHANA_CENTER, GHANA_ZOOM } from "@/lib/constants";
+import { Search, MapPin } from "lucide-react";
 
 export interface PickedLocation {
   lat: number;
@@ -34,31 +35,38 @@ function pinIcon(): L.DivIcon {
 export default function LocationPicker({
   value,
   onChange,
-  height = 260,
+  height = 280,
 }: LocationPickerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<L.Map | null>(null);
-  const markerRef = useRef<L.Marker | null>(null);
-  const onChangeRef = useRef(onChange);
+  const mapRef       = useRef<L.Map | null>(null);
+  const markerRef    = useRef<L.Marker | null>(null);
+  const onChangeRef  = useRef(onChange);
   onChangeRef.current = onChange;
 
+  /* ── Nominatim search state ── */
+  const [query,       setQuery]       = useState("");
+  const [results,     setResults]     = useState<any[]>([]);
+  const [searching,   setSearching]   = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /* ── Init map ── */
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
 
     const map = L.map(containerRef.current, {
-      center: [GHANA_CENTER.lat, GHANA_CENTER.lng],
-      zoom: GHANA_ZOOM,
-      minZoom: 6,
-      maxZoom: 19,
-      zoomControl: true,
+      center:           [GHANA_CENTER.lat, GHANA_CENTER.lng],
+      zoom:             GHANA_ZOOM,
+      minZoom:          6,
+      maxZoom:          19,
+      zoomControl:      true,
       attributionControl: false,
     });
     mapRef.current = map;
 
-    L.tileLayer(
-      "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
-      { maxZoom: 20 }
-    ).addTo(map);
+    // ✅ OSM tiles — no API key required
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+    }).addTo(map);
 
     const setMarker = (lat: number, lng: number) => {
       if (markerRef.current) {
@@ -74,47 +82,135 @@ export default function LocationPicker({
     });
 
     const ro = new ResizeObserver(() => map.invalidateSize({ animate: false }));
-    ro.observe(containerRef.current);
+    ro.observe(containerRef.current!);
 
-    // try to center on the owner's location
+    // Try to center on user location (best effort — may be blocked)
     if ("geolocation" in navigator) {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
-          map.setView([pos.coords.latitude, pos.coords.longitude], 13);
+          map.setView([pos.coords.latitude, pos.coords.longitude], 14);
         },
         () => {},
-        { timeout: 8000, maximumAge: 60000 }
+        { timeout: 6000, maximumAge: 60_000 }
       );
     }
 
     return () => {
       ro.disconnect();
       map.remove();
-      mapRef.current = null;
+      mapRef.current  = null;
       markerRef.current = null;
     };
   }, []);
 
-  // reflect external value changes (e.g. "use my location")
+  /* ── Reflect external value changes (e.g. "use my location" button) ── */
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !value) return;
-    if (markerRef.current) markerRef.current.setLatLng([value.lat, value.lng]);
-    else
-      markerRef.current = L.marker([value.lat, value.lng], {
-        icon: pinIcon(),
-      }).addTo(map);
-    map.flyTo([value.lat, value.lng], Math.max(map.getZoom(), 15), {
-      duration: 0.6,
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (markerRef.current) {
+      markerRef.current.setLatLng([value.lat, value.lng]);
+    } else {
+      markerRef.current = L.marker([value.lat, value.lng], { icon: pinIcon() }).addTo(map);
+    }
+    map.flyTo([value.lat, value.lng], Math.max(map.getZoom(), 15), { duration: 0.6 });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value?.lat, value?.lng]);
 
+  /* ── Nominatim search ── */
+  function handleSearch(val: string) {
+    setQuery(val);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (!val.trim()) { setResults([]); return; }
+
+    debounceRef.current = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const r = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(val + " Ghana")}&limit=5&countrycodes=gh`,
+          { headers: { "Accept-Language": "en" } }
+        );
+        setResults(await r.json());
+      } catch {
+        /* ignore network errors */
+      } finally {
+        setSearching(false);
+      }
+    }, 500);
+  }
+
+  function pickResult(r: any) {
+    const lat = parseFloat(r.lat);
+    const lng = parseFloat(r.lon);
+    setResults([]);
+    setQuery(r.display_name.split(",")[0]);
+
+    const map = mapRef.current;
+    if (!map) return;
+    map.flyTo([lat, lng], 15, { duration: 0.6 });
+
+    if (markerRef.current) {
+      markerRef.current.setLatLng([lat, lng]);
+    } else {
+      markerRef.current = L.marker([lat, lng], { icon: pinIcon() }).addTo(map);
+    }
+    onChangeRef.current({ lat, lng });
+  }
+
   return (
-    <div
-      ref={containerRef}
-      className="w-full overflow-hidden rounded-2xl border border-brand-200 shadow-inner"
-      style={{ height }}
-    />
+    <div className="flex flex-col gap-2 w-full">
+      {/* ── Search bar ── */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)] pointer-events-none" />
+        <input
+          className="input pl-9 pr-9"
+          placeholder="Search area, street, landmark in Ghana…"
+          value={query}
+          onChange={(e) => handleSearch(e.target.value)}
+        />
+        {searching && (
+          <div className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-[var(--brand)] border-t-transparent rounded-full animate-spin" />
+        )}
+
+        {/* Dropdown results */}
+        {results.length > 0 && (
+          <div className="absolute top-full left-0 right-0 mt-1 bg-[var(--surface)] border border-[var(--border-col)] rounded-2xl shadow-xl z-[9999] overflow-hidden">
+            {results.map((r: any) => (
+              <button
+                key={r.place_id}
+                type="button"
+                onClick={() => pickResult(r)}
+                className="w-full text-left px-4 py-3 text-sm hover:bg-[var(--surface-2)] border-b border-[var(--border-col)] last:border-0 flex items-start gap-2"
+              >
+                <MapPin className="w-4 h-4 text-[var(--brand)] mt-0.5 shrink-0" />
+                <span className="line-clamp-2 text-[var(--text-main)]">
+                  {r.display_name}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ── Map ── */}
+      <div className="relative">
+        <div
+          ref={containerRef}
+          className="w-full overflow-hidden rounded-2xl border border-[var(--border-col)] shadow-inner"
+          style={{ height }}
+        />
+        {/* Tap hint when no pin yet */}
+        {!value && (
+          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-[400] bg-black/65 text-white text-xs px-3 py-1.5 rounded-full pointer-events-none whitespace-nowrap">
+            Tap the map to drop a pin
+          </div>
+        )}
+        {/* Coordinates badge when pin is placed */}
+        {value && (
+          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-[400] bg-black/65 text-white text-xs px-3 py-1.5 rounded-full pointer-events-none font-mono whitespace-nowrap">
+            {value.lat.toFixed(5)}, {value.lng.toFixed(5)}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

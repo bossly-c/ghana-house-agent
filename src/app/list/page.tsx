@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import dynamic from "next/dynamic";
 import {
   ChevronLeft,
   ChevronRight,
@@ -12,7 +13,6 @@ import {
   User,
   Camera,
   Clock,
-  Home,
   Check,
   Building2,
   PlusCircle,
@@ -27,6 +27,15 @@ import {
   WEEK_DAYS,
 } from "@/lib/constants";
 import { formatGHS } from "@/lib/format";
+import type { PickedLocation } from "@/components/LocationPicker";
+
+// ✅ Dynamic import — Leaflet cannot run on the server
+const LocationPicker = dynamic(() => import("@/components/LocationPicker"), {
+  ssr: false,
+  loading: () => (
+    <div className="w-full rounded-2xl border border-[var(--border-col)] bg-[var(--surface-2)] animate-pulse" style={{ height: 280 }} />
+  ),
+});
 
 type ListingType = "rent" | "sale";
 type PricePeriod = "month" | "year" | "week" | "day" | "total";
@@ -115,23 +124,23 @@ const STEPS = [
 ];
 
 export default function ListPage() {
-  const { user } = useAuth();
-  const router = useRouter();
-  const [step, setStep] = useState(0);
-  const [form, setForm] = useState<FormState>(INITIAL);
+  const { user }   = useAuth();
+  const router     = useRouter();
+  const [step, setStep]           = useState(0);
+  const [form, setForm]           = useState<FormState>(INITIAL);
   const [submitting, setSubmitting] = useState(false);
-  const [done, setDone] = useState(false);
-  const [locating, setLocating] = useState(false);
+  const [done, setDone]           = useState(false);
+  const [locating, setLocating]   = useState(false);
   const photoInputRef = useRef<HTMLInputElement>(null);
-  const panoInputRef = useRef<HTMLInputElement>(null);
+  const panoInputRef  = useRef<HTMLInputElement>(null);
 
   /* ── Autofill contact from logged-in user ── */
   useEffect(() => {
     if (user) {
       setForm((f) => ({
         ...f,
-        agentName: user.name ?? f.agentName,
-        agentPhone: user.phone ?? f.agentPhone,
+        agentName:    user.name     ?? f.agentName,
+        agentPhone:   user.phone    ?? f.agentPhone,
         agentWhatsApp: user.whatsapp ?? f.agentWhatsApp,
       }));
     }
@@ -143,10 +152,10 @@ export default function ListPage() {
   }
 
   function setUnit(i: number, patch: Partial<CompoundUnit>) {
-    setForm((f) => {
-      const units = f.units.map((u, idx) => (idx === i ? { ...u, ...patch } : u));
-      return { ...f, units };
-    });
+    setForm((f) => ({
+      ...f,
+      units: f.units.map((u, idx) => (idx === i ? { ...u, ...patch } : u)),
+    }));
   }
 
   function addUnit() {
@@ -175,6 +184,7 @@ export default function ListPage() {
     }));
   }
 
+  /* ── GPS locate (best-effort; map picker is the primary method) ── */
   function locateMe() {
     if (!navigator.geolocation) return;
     setLocating(true);
@@ -184,8 +194,11 @@ export default function ListPage() {
         set("lng", pos.coords.longitude);
         setLocating(false);
       },
-      () => setLocating(false),
-      { enableHighAccuracy: true }
+      () => {
+        // Permission blocked — user can still use the map to tap a location
+        setLocating(false);
+      },
+      { enableHighAccuracy: true, timeout: 8000 }
     );
   }
 
@@ -221,42 +234,40 @@ export default function ListPage() {
         }
       }
 
-      /* Compute price for compound (lowest unit price) */
       const priceToSend = form.isCompound
         ? Math.min(...form.units.map((u) => u.price))
         : form.price;
 
-      /* Build payload */
       const token =
         typeof window !== "undefined" ? localStorage.getItem("gha_token") : null;
 
       const payload = {
-        listingType: form.listingType,
-        propertyType: form.propertyType,
-        region: form.region,
-        address: form.address,
-        title: form.title,
-        description: form.description,
-        lat: form.lat,
-        lng: form.lng,
-        beds: form.isCompound ? 0 : form.beds,
-        baths: form.isCompound ? 0 : form.baths,
-        halls: form.isCompound ? 0 : form.halls,
-        price: priceToSend,
-        pricePeriod: form.isCompound ? "month" : form.pricePeriod,
-        amenities: form.amenities,
-        photos: photoUrls,
-        availableDays: form.availableDays,
+        listingType:   form.listingType,
+        propertyType:  form.propertyType,
+        region:        form.region,
+        address:       form.address,
+        title:         form.title,
+        description:   form.description,
+        lat:           form.lat,
+        lng:           form.lng,
+        beds:          form.isCompound ? 0 : form.beds,
+        baths:         form.isCompound ? 0 : form.baths,
+        halls:         form.isCompound ? 0 : form.halls,
+        price:         priceToSend,
+        pricePeriod:   form.isCompound ? "month" : form.pricePeriod,
+        amenities:     form.amenities,
+        photos:        photoUrls,
+        viewingDays:   form.availableDays,
         availableFrom: form.availableFrom,
-        availableTo: form.availableTo,
-        agentName: form.agentName,
-        agentPhone: form.agentPhone,
+        availableTo:   form.availableTo,
+        agentName:     form.agentName,
+        agentPhone:    form.agentPhone,
         agentWhatsApp: form.agentWhatsApp,
-        isCompound: form.isCompound,
-        units: form.isCompound ? form.units : [],
+        isCompound:    form.isCompound,
+        units:         form.isCompound ? form.units : [],
       };
 
-      await fetch("/api/properties", {
+      const res = await fetch("/api/properties", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -265,9 +276,17 @@ export default function ListPage() {
         body: JSON.stringify(payload),
       });
 
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        console.error("[submit] API error", res.status, err);
+        alert(`Failed to submit: ${err.error ?? res.status}`);
+        return;
+      }
+
       setDone(true);
     } catch (e) {
       console.error(e);
+      alert("Network error — check your connection");
     } finally {
       setSubmitting(false);
     }
@@ -294,12 +313,12 @@ export default function ListPage() {
     );
   }
 
-  /* ── Progress bar ── */
   const progress = ((step + 1) / STEPS.length) * 100;
 
   return (
     <div className="min-h-screen bg-[var(--bg-app)] text-[var(--text-main)] flex flex-col">
-      {/* Header */}
+
+      {/* ── Header ── */}
       <div
         className="sticky top-0 z-30 bg-[var(--surface)] border-b border-[var(--border-col)] px-4 py-3"
         style={{ paddingTop: "calc(var(--sat) + 12px)" }}
@@ -312,13 +331,10 @@ export default function ListPage() {
             <ChevronLeft className="w-5 h-5" />
           </button>
           <div className="flex-1">
-            <p className="text-xs text-[var(--text-muted)]">
-              Step {step + 1} of {STEPS.length}
-            </p>
+            <p className="text-xs text-[var(--text-muted)]">Step {step + 1} of {STEPS.length}</p>
             <p className="font-semibold text-sm">{STEPS[step]}</p>
           </div>
         </div>
-        {/* Progress */}
         <div className="max-w-lg mx-auto mt-2 h-1.5 rounded-full bg-[var(--surface-2)]">
           <div
             className="h-full rounded-full bg-[var(--brand)] transition-all duration-300"
@@ -327,14 +343,15 @@ export default function ListPage() {
         </div>
       </div>
 
-      {/* Body */}
+      {/* ── Body ── */}
       <div className="flex-1 overflow-y-auto p-4 max-w-lg mx-auto w-full pb-32">
 
-        {/* ═══════════════════════════════════════════
+        {/* ══════════════════════════════════════════
             STEP 0 — Listing Basics
-        ═══════════════════════════════════════════ */}
+        ══════════════════════════════════════════ */}
         {step === 0 && (
           <div className="flex flex-col gap-5">
+
             {/* Listing type */}
             <div>
               <label className="label-sm">Listing Type</label>
@@ -365,9 +382,7 @@ export default function ListPage() {
               >
                 <option value="">Select type…</option>
                 {PROPERTY_TYPES.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
+                  <option key={t} value={t}>{t}</option>
                 ))}
               </select>
             </div>
@@ -382,9 +397,7 @@ export default function ListPage() {
               >
                 <option value="">Select region…</option>
                 {GHANA_REGIONS.map((r) => (
-                  <option key={r} value={r}>
-                    {r}
-                  </option>
+                  <option key={r} value={r}>{r}</option>
                 ))}
               </select>
             </div>
@@ -422,46 +435,45 @@ export default function ListPage() {
               />
             </div>
 
-            {/* GPS */}
+            {/* ── Location picker (replaces raw lat/lng inputs) ── */}
             <div>
-              <label className="label-sm">GPS Coordinates (optional)</label>
-              <div className="flex gap-2 mt-2">
-                <input
-                  className="input flex-1"
-                  placeholder="Latitude"
-                  type="number"
-                  value={form.lat ?? ""}
-                  onChange={(e) =>
-                    set("lat", e.target.value ? parseFloat(e.target.value) : null)
-                  }
-                />
-                <input
-                  className="input flex-1"
-                  placeholder="Longitude"
-                  type="number"
-                  value={form.lng ?? ""}
-                  onChange={(e) =>
-                    set("lng", e.target.value ? parseFloat(e.target.value) : null)
-                  }
-                />
-              </div>
+              <label className="label-sm mb-2 block">Property Location</label>
+              <p className="text-xs text-[var(--text-muted)] mb-2">
+                Search or tap the map to pin the exact location.
+              </p>
+
+              <LocationPicker
+                value={form.lat && form.lng ? { lat: form.lat, lng: form.lng } : null}
+                onChange={(loc: PickedLocation) => {
+                  set("lat", loc.lat);
+                  set("lng", loc.lng);
+                }}
+                height={280}
+              />
+
+              {/* GPS auto-locate (best-effort fallback) */}
               <button
+                type="button"
                 onClick={locateMe}
                 disabled={locating}
-                className="mt-2 flex items-center gap-2 text-sm text-[var(--brand)] font-medium"
+                className="mt-2 flex items-center gap-2 text-sm text-[var(--brand)] font-medium disabled:opacity-50"
               >
                 <MapPin className="w-4 h-4" />
-                {locating ? "Locating…" : "Use my current location"}
+                {locating ? "Locating…" : "Or snap to my current GPS"}
               </button>
+
+              {/* Show coordinates once set */}
+              {form.lat && form.lng && (
+                <p className="mt-1 text-xs text-[var(--text-muted)] font-mono">
+                  📍 {form.lat.toFixed(5)}, {form.lng.toFixed(5)}
+                </p>
+              )}
             </div>
 
-            {/* ─────────────────────────────────────────
-                COMPOUND / MULTI-UNIT SECTION
-                Sits between Step 1 and Step 2
-            ───────────────────────────────────────── */}
+            {/* ── Compound / multi-unit section ── */}
             <div className="rounded-2xl border-2 border-dashed border-[var(--border-col)] p-4 flex flex-col gap-4">
-              {/* Toggle */}
               <button
+                type="button"
                 onClick={() => set("isCompound", !form.isCompound)}
                 className="flex items-center gap-3 w-full"
               >
@@ -487,7 +499,6 @@ export default function ListPage() {
                 </div>
               </button>
 
-              {/* Unit builder — visible when compound is ON */}
               {form.isCompound && (
                 <div className="flex flex-col gap-4">
                   {form.units.map((unit, i) => (
@@ -495,21 +506,17 @@ export default function ListPage() {
                       key={i}
                       className="bg-[var(--surface-2)] rounded-2xl p-4 flex flex-col gap-3 relative"
                     >
-                      {/* Remove button (only if 3+ units) */}
                       {form.units.length > 2 && (
                         <button
+                          type="button"
                           onClick={() => removeUnit(i)}
                           className="absolute top-3 right-3 p-1 rounded-full bg-red-100 dark:bg-red-900"
                         >
                           <Trash2 className="w-4 h-4 text-red-500" />
                         </button>
                       )}
+                      <p className="font-semibold text-sm text-[var(--text-muted)]">Unit {i + 1}</p>
 
-                      <p className="font-semibold text-sm text-[var(--text-muted)]">
-                        Unit {i + 1}
-                      </p>
-
-                      {/* Unit type */}
                       <div>
                         <label className="label-sm">Unit Type</label>
                         <input
@@ -520,70 +527,35 @@ export default function ListPage() {
                         />
                       </div>
 
-                      {/* Beds / Baths / Halls */}
                       <div className="grid grid-cols-3 gap-2">
                         <div>
                           <label className="label-sm">Beds</label>
-                          <input
-                            type="number"
-                            min={0}
-                            className="input mt-1"
-                            value={unit.beds}
-                            onChange={(e) =>
-                              setUnit(i, { beds: parseInt(e.target.value) || 0 })
-                            }
-                          />
+                          <input type="number" min={0} className="input mt-1" value={unit.beds}
+                            onChange={(e) => setUnit(i, { beds: parseInt(e.target.value) || 0 })} />
                         </div>
                         <div>
                           <label className="label-sm">Baths</label>
-                          <input
-                            type="number"
-                            min={0}
-                            className="input mt-1"
-                            value={unit.baths}
-                            onChange={(e) =>
-                              setUnit(i, { baths: parseInt(e.target.value) || 0 })
-                            }
-                          />
+                          <input type="number" min={0} className="input mt-1" value={unit.baths}
+                            onChange={(e) => setUnit(i, { baths: parseInt(e.target.value) || 0 })} />
                         </div>
                         <div>
                           <label className="label-sm">Halls</label>
-                          <input
-                            type="number"
-                            min={0}
-                            className="input mt-1"
-                            value={unit.halls}
-                            onChange={(e) =>
-                              setUnit(i, { halls: parseInt(e.target.value) || 0 })
-                            }
-                          />
+                          <input type="number" min={0} className="input mt-1" value={unit.halls}
+                            onChange={(e) => setUnit(i, { halls: parseInt(e.target.value) || 0 })} />
                         </div>
                       </div>
 
-                      {/* Price + Period */}
                       <div className="flex gap-2">
                         <div className="flex-1">
                           <label className="label-sm">Price (GH₵)</label>
-                          <input
-                            type="number"
-                            min={0}
-                            className="input mt-1"
-                            placeholder="0"
+                          <input type="number" min={0} className="input mt-1" placeholder="0"
                             value={unit.price || ""}
-                            onChange={(e) =>
-                              setUnit(i, { price: parseInt(e.target.value) || 0 })
-                            }
-                          />
+                            onChange={(e) => setUnit(i, { price: parseInt(e.target.value) || 0 })} />
                         </div>
                         <div className="w-28">
                           <label className="label-sm">Per</label>
-                          <select
-                            className="input mt-1"
-                            value={unit.pricePeriod}
-                            onChange={(e) =>
-                              setUnit(i, { pricePeriod: e.target.value as PricePeriod })
-                            }
-                          >
+                          <select className="input mt-1" value={unit.pricePeriod}
+                            onChange={(e) => setUnit(i, { pricePeriod: e.target.value as PricePeriod })}>
                             <option value="month">Month</option>
                             <option value="year">Year</option>
                             <option value="week">Week</option>
@@ -593,18 +565,13 @@ export default function ListPage() {
                         </div>
                       </div>
 
-                      {/* Optional description */}
                       <div>
                         <label className="label-sm">Description (optional)</label>
-                        <input
-                          className="input mt-1"
-                          placeholder="Any extra details about this unit…"
+                        <input className="input mt-1" placeholder="Any extra details…"
                           value={unit.description}
-                          onChange={(e) => setUnit(i, { description: e.target.value })}
-                        />
+                          onChange={(e) => setUnit(i, { description: e.target.value })} />
                       </div>
 
-                      {/* Preview price */}
                       {unit.price > 0 && (
                         <p className="text-xs text-[var(--brand)] font-semibold">
                           {formatGHS(unit.price)} / {unit.pricePeriod}
@@ -613,8 +580,8 @@ export default function ListPage() {
                     </div>
                   ))}
 
-                  {/* Add unit button */}
                   <button
+                    type="button"
                     onClick={addUnit}
                     className="flex items-center justify-center gap-2 py-3 rounded-2xl border-2 border-dashed border-[var(--brand)] text-[var(--brand)] font-semibold text-sm"
                   >
@@ -622,7 +589,6 @@ export default function ListPage() {
                     Add Another Unit Type
                   </button>
 
-                  {/* Summary */}
                   {form.units.some((u) => u.price > 0) && (
                     <div className="bg-[var(--brand)]/10 rounded-xl p-3 text-sm text-[var(--brand)] font-medium">
                       Map will show:{" "}
@@ -634,17 +600,15 @@ export default function ListPage() {
                 </div>
               )}
             </div>
-            {/* END COMPOUND SECTION */}
           </div>
         )}
 
-        {/* ═══════════════════════════════════════════
+        {/* ══════════════════════════════════════════
             STEP 1 — Property Details
-        ═══════════════════════════════════════════ */}
+        ══════════════════════════════════════════ */}
         {step === 1 && (
           <div className="flex flex-col gap-5">
             {form.isCompound ? (
-              /* Compound: show read-only unit summary */
               <div className="flex flex-col gap-3">
                 <div className="bg-[var(--surface-2)] rounded-2xl p-4">
                   <p className="font-semibold flex items-center gap-2 mb-1">
@@ -653,27 +617,19 @@ export default function ListPage() {
                   </p>
                   <p className="text-sm text-[var(--text-muted)]">
                     {form.units.length} unit type{form.units.length !== 1 ? "s" : ""} defined.
-                    Prices and details are set per unit.
                   </p>
                 </div>
-                <p className="text-xs text-[var(--text-muted)]">
-                  To edit units, go back to Step 1.
-                </p>
-
-                {/* Amenities still apply to the whole compound */}
+                <p className="text-xs text-[var(--text-muted)]">To edit units, go back to Step 1.</p>
                 <div>
                   <label className="label-sm">Compound Amenities</label>
                   <div className="flex flex-wrap gap-2 mt-2">
                     {AMENITY_OPTIONS.map((a) => (
-                      <button
-                        key={a}
-                        onClick={() => toggleAmenity(a)}
+                      <button key={a} onClick={() => toggleAmenity(a)}
                         className={`px-3 py-1.5 rounded-full text-sm border transition-all ${
                           form.amenities.includes(a)
                             ? "bg-[var(--brand)] text-white border-[var(--brand)]"
                             : "border-[var(--border-col)] text-[var(--text-muted)]"
-                        }`}
-                      >
+                        }`}>
                         {a}
                       </button>
                     ))}
@@ -681,63 +637,36 @@ export default function ListPage() {
                 </div>
               </div>
             ) : (
-              /* Single listing details */
               <div className="flex flex-col gap-5">
-                {/* Beds / Baths / Halls */}
                 <div className="grid grid-cols-3 gap-3">
                   <div>
                     <label className="label-sm">Bedrooms</label>
-                    <input
-                      type="number"
-                      min={0}
-                      className="input mt-2"
-                      value={form.beds}
-                      onChange={(e) => set("beds", parseInt(e.target.value) || 0)}
-                    />
+                    <input type="number" min={0} className="input mt-2" value={form.beds}
+                      onChange={(e) => set("beds", parseInt(e.target.value) || 0)} />
                   </div>
                   <div>
                     <label className="label-sm">Bathrooms</label>
-                    <input
-                      type="number"
-                      min={0}
-                      className="input mt-2"
-                      value={form.baths}
-                      onChange={(e) => set("baths", parseInt(e.target.value) || 0)}
-                    />
+                    <input type="number" min={0} className="input mt-2" value={form.baths}
+                      onChange={(e) => set("baths", parseInt(e.target.value) || 0)} />
                   </div>
                   <div>
                     <label className="label-sm">Halls</label>
-                    <input
-                      type="number"
-                      min={0}
-                      className="input mt-2"
-                      value={form.halls}
-                      onChange={(e) => set("halls", parseInt(e.target.value) || 0)}
-                    />
+                    <input type="number" min={0} className="input mt-2" value={form.halls}
+                      onChange={(e) => set("halls", parseInt(e.target.value) || 0)} />
                   </div>
                 </div>
 
-                {/* Price */}
                 <div>
                   <label className="label-sm">Price (GH₵)</label>
-                  <input
-                    type="number"
-                    min={0}
-                    className="input mt-2"
-                    placeholder="0"
+                  <input type="number" min={0} className="input mt-2" placeholder="0"
                     value={form.price || ""}
-                    onChange={(e) => set("price", parseInt(e.target.value) || 0)}
-                  />
+                    onChange={(e) => set("price", parseInt(e.target.value) || 0)} />
                 </div>
 
-                {/* Price period */}
                 <div>
                   <label className="label-sm">Price Period</label>
-                  <select
-                    className="input mt-2"
-                    value={form.pricePeriod}
-                    onChange={(e) => set("pricePeriod", e.target.value as PricePeriod)}
-                  >
+                  <select className="input mt-2" value={form.pricePeriod}
+                    onChange={(e) => set("pricePeriod", e.target.value as PricePeriod)}>
                     <option value="month">Per Month</option>
                     <option value="year">Per Year</option>
                     <option value="week">Per Week</option>
@@ -746,30 +675,23 @@ export default function ListPage() {
                   </select>
                 </div>
 
-                {/* Preview */}
                 {form.price > 0 && (
                   <div className="bg-[var(--brand)]/10 rounded-xl p-3 text-sm text-[var(--brand)] font-medium">
                     Listing price:{" "}
-                    <span className="font-bold">
-                      {formatGHS(form.price)} / {form.pricePeriod}
-                    </span>
+                    <span className="font-bold">{formatGHS(form.price)} / {form.pricePeriod}</span>
                   </div>
                 )}
 
-                {/* Amenities */}
                 <div>
                   <label className="label-sm">Amenities</label>
                   <div className="flex flex-wrap gap-2 mt-2">
                     {AMENITY_OPTIONS.map((a) => (
-                      <button
-                        key={a}
-                        onClick={() => toggleAmenity(a)}
+                      <button key={a} onClick={() => toggleAmenity(a)}
                         className={`px-3 py-1.5 rounded-full text-sm border transition-all ${
                           form.amenities.includes(a)
                             ? "bg-[var(--brand)] text-white border-[var(--brand)]"
                             : "border-[var(--border-col)] text-[var(--text-muted)]"
-                        }`}
-                      >
+                        }`}>
                         {a}
                       </button>
                     ))}
@@ -780,9 +702,9 @@ export default function ListPage() {
           </div>
         )}
 
-        {/* ═══════════════════════════════════════════
+        {/* ══════════════════════════════════════════
             STEP 2 — Photos
-        ═══════════════════════════════════════════ */}
+        ══════════════════════════════════════════ */}
         {step === 2 && (
           <div className="flex flex-col gap-5">
             <div>
@@ -791,52 +713,32 @@ export default function ListPage() {
                 Add clear, well-lit photos. First photo is the cover.
               </p>
             </div>
-
-            {/* Upload button */}
             <button
               onClick={() => photoInputRef.current?.click()}
               className="flex flex-col items-center justify-center gap-3 py-8 rounded-2xl border-2 border-dashed border-[var(--border-col)] hover:border-[var(--brand)] transition-colors"
             >
               <Upload className="w-8 h-8 text-[var(--text-muted)]" />
-              <span className="text-sm text-[var(--text-muted)]">
-                Tap to upload photos
-              </span>
+              <span className="text-sm text-[var(--text-muted)]">Tap to upload photos</span>
             </button>
-            <input
-              ref={photoInputRef}
-              type="file"
-              accept="image/*"
-              multiple
-              className="hidden"
+            <input ref={photoInputRef} type="file" accept="image/*" multiple className="hidden"
               onChange={(e) => {
                 const files = Array.from(e.target.files ?? []);
                 set("photos", [...form.photos, ...files]);
-              }}
-            />
-
-            {/* Photo previews */}
+              }} />
             {form.photos.length > 0 && (
               <div className="grid grid-cols-3 gap-2">
                 {form.photos.map((f, i) => (
                   <div key={i} className="relative aspect-square">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={URL.createObjectURL(f)}
-                      alt={`photo-${i}`}
-                      className="w-full h-full object-cover rounded-xl"
-                    />
+                    <img src={URL.createObjectURL(f)} alt={`photo-${i}`}
+                      className="w-full h-full object-cover rounded-xl" />
                     {i === 0 && (
                       <span className="absolute top-1 left-1 text-[10px] bg-black/60 text-white px-1.5 py-0.5 rounded-full">
                         Cover
                       </span>
                     )}
                     <button
-                      onClick={() =>
-                        set(
-                          "photos",
-                          form.photos.filter((_, idx) => idx !== i)
-                        )
-                      }
+                      onClick={() => set("photos", form.photos.filter((_, idx) => idx !== i))}
                       className="absolute top-1 right-1 bg-black/60 rounded-full p-0.5"
                     >
                       <X className="w-3 h-3 text-white" />
@@ -848,135 +750,98 @@ export default function ListPage() {
           </div>
         )}
 
-        {/* ═══════════════════════════════════════════
+        {/* ══════════════════════════════════════════
             STEP 3 — 360° Tour
-        ═══════════════════════════════════════════ */}
+        ══════════════════════════════════════════ */}
         {step === 3 && (
           <div className="flex flex-col gap-5">
             <div>
               <label className="label-sm">360° Panorama Photos</label>
               <p className="text-xs text-[var(--text-muted)] mt-1">
-                Use Google Street View app to capture Photo Sphere images of each
-                room. Upload those equirectangular JPGs here.
+                Use Google Street View app to capture Photo Sphere images of each room.
               </p>
             </div>
-
             <button
               onClick={() => panoInputRef.current?.click()}
               className="flex flex-col items-center justify-center gap-3 py-8 rounded-2xl border-2 border-dashed border-[var(--border-col)] hover:border-[var(--brand)] transition-colors"
             >
               <Camera className="w-8 h-8 text-[var(--text-muted)]" />
-              <span className="text-sm text-[var(--text-muted)]">
-                Tap to upload panoramas (optional)
-              </span>
+              <span className="text-sm text-[var(--text-muted)]">Tap to upload panoramas (optional)</span>
             </button>
-            <input
-              ref={panoInputRef}
-              type="file"
-              accept="image/*"
-              multiple
-              className="hidden"
+            <input ref={panoInputRef} type="file" accept="image/*" multiple className="hidden"
               onChange={(e) => {
                 const files = Array.from(e.target.files ?? []);
                 set("panoFiles", [...form.panoFiles, ...files]);
-              }}
-            />
-
+              }} />
             {form.panoFiles.length > 0 && (
               <div className="flex flex-col gap-2">
                 {form.panoFiles.map((f, i) => (
-                  <div
-                    key={i}
-                    className="flex items-center justify-between bg-[var(--surface-2)] rounded-xl px-4 py-3"
-                  >
+                  <div key={i}
+                    className="flex items-center justify-between bg-[var(--surface-2)] rounded-xl px-4 py-3">
                     <span className="text-sm truncate max-w-[220px]">{f.name}</span>
-                    <button
-                      onClick={() =>
-                        set(
-                          "panoFiles",
-                          form.panoFiles.filter((_, idx) => idx !== i)
-                        )
-                      }
-                    >
+                    <button onClick={() => set("panoFiles", form.panoFiles.filter((_, idx) => idx !== i))}>
                       <X className="w-4 h-4 text-[var(--text-muted)]" />
                     </button>
                   </div>
                 ))}
               </div>
             )}
-
             <div className="bg-[var(--surface-2)] rounded-2xl p-4 text-sm text-[var(--text-muted)]">
-              <p className="font-medium text-[var(--text-main)] mb-1">
-                💡 How it works
-              </p>
+              <p className="font-medium text-[var(--text-main)] mb-1">💡 How it works</p>
               <ol className="list-decimal list-inside flex flex-col gap-1 text-xs">
                 <li>Open Google Street View → Camera → Photo Sphere</li>
                 <li>Walk through each room capturing panoramas</li>
                 <li>Export & upload the equirectangular JPGs here</li>
-                <li>
-                  Our team will stitch them into an interactive tour within 24h
-                </li>
+                <li>Our team will stitch them into an interactive tour within 24h</li>
               </ol>
             </div>
           </div>
         )}
 
-        {/* ═══════════════════════════════════════════
+        {/* ══════════════════════════════════════════
             STEP 4 — Viewing Schedule
-        ═══════════════════════════════════════════ */}
+        ══════════════════════════════════════════ */}
         {step === 4 && (
           <div className="flex flex-col gap-5">
             <div>
               <label className="label-sm">Available Days</label>
               <div className="flex flex-wrap gap-2 mt-2">
                 {WEEK_DAYS.map((d) => (
-                  <button
-                    key={d}
-                    onClick={() => toggleDay(d)}
+                  <button key={d} onClick={() => toggleDay(d)}
                     className={`px-3 py-1.5 rounded-full text-sm border transition-all ${
                       form.availableDays.includes(d)
                         ? "bg-[var(--brand)] text-white border-[var(--brand)]"
                         : "border-[var(--border-col)] text-[var(--text-muted)]"
-                    }`}
-                  >
+                    }`}>
                     {d}
                   </button>
                 ))}
               </div>
             </div>
-
             <div className="flex gap-3">
               <div className="flex-1">
                 <label className="label-sm">From</label>
                 <div className="relative mt-2">
                   <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
-                  <input
-                    type="time"
-                    className="input pl-9"
-                    value={form.availableFrom}
-                    onChange={(e) => set("availableFrom", e.target.value)}
-                  />
+                  <input type="time" className="input pl-9" value={form.availableFrom}
+                    onChange={(e) => set("availableFrom", e.target.value)} />
                 </div>
               </div>
               <div className="flex-1">
                 <label className="label-sm">To</label>
                 <div className="relative mt-2">
                   <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
-                  <input
-                    type="time"
-                    className="input pl-9"
-                    value={form.availableTo}
-                    onChange={(e) => set("availableTo", e.target.value)}
-                  />
+                  <input type="time" className="input pl-9" value={form.availableTo}
+                    onChange={(e) => set("availableTo", e.target.value)} />
                 </div>
               </div>
             </div>
           </div>
         )}
 
-        {/* ═══════════════════════════════════════════
+        {/* ══════════════════════════════════════════
             STEP 5 — Contact Info
-        ═══════════════════════════════════════════ */}
+        ══════════════════════════════════════════ */}
         {step === 5 && (
           <div className="flex flex-col gap-5">
             {user && (
@@ -984,53 +849,34 @@ export default function ListPage() {
                 ✓ Contact info autofilled from your profile
               </div>
             )}
-
             <div>
               <label className="label-sm">Your Name</label>
               <div className="relative mt-2">
                 <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
-                <input
-                  className="input pl-9"
-                  placeholder="Full name"
-                  value={form.agentName}
-                  onChange={(e) => set("agentName", e.target.value)}
-                />
+                <input className="input pl-9" placeholder="Full name" value={form.agentName}
+                  onChange={(e) => set("agentName", e.target.value)} />
               </div>
             </div>
-
             <div>
               <label className="label-sm">Phone Number</label>
               <div className="relative mt-2">
                 <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
-                <input
-                  className="input pl-9"
-                  placeholder="+233 XX XXX XXXX"
-                  type="tel"
-                  value={form.agentPhone}
-                  onChange={(e) => set("agentPhone", e.target.value)}
-                />
+                <input className="input pl-9" placeholder="+233 XX XXX XXXX" type="tel"
+                  value={form.agentPhone} onChange={(e) => set("agentPhone", e.target.value)} />
               </div>
             </div>
-
             <div>
               <label className="label-sm">WhatsApp Number</label>
               <div className="relative mt-2">
                 <MessageCircle className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
-                <input
-                  className="input pl-9"
-                  placeholder="+233 XX XXX XXXX"
-                  type="tel"
-                  value={form.agentWhatsApp}
-                  onChange={(e) => set("agentWhatsApp", e.target.value)}
-                />
+                <input className="input pl-9" placeholder="+233 XX XXX XXXX" type="tel"
+                  value={form.agentWhatsApp} onChange={(e) => set("agentWhatsApp", e.target.value)} />
               </div>
             </div>
 
-            {/* Final summary */}
+            {/* Summary */}
             <div className="bg-[var(--surface-2)] rounded-2xl p-4 flex flex-col gap-2 text-sm">
-              <p className="font-semibold text-[var(--text-main)]">
-                Listing Summary
-              </p>
+              <p className="font-semibold text-[var(--text-main)]">Listing Summary</p>
               <div className="flex justify-between">
                 <span className="text-[var(--text-muted)]">Type</span>
                 <span className="capitalize">{form.listingType}</span>
@@ -1048,23 +894,23 @@ export default function ListPage() {
                   <span className="text-[var(--text-muted)]">Units</span>
                   <span>
                     {form.units.length} types · from{" "}
-                    {formatGHS(
-                      Math.min(
-                        ...form.units
-                          .filter((u) => u.price > 0)
-                          .map((u) => u.price)
-                      )
-                    )}
+                    {formatGHS(Math.min(...form.units.filter((u) => u.price > 0).map((u) => u.price)))}
                   </span>
                 </div>
               ) : (
                 <div className="flex justify-between">
                   <span className="text-[var(--text-muted)]">Price</span>
-                  <span>
-                    {formatGHS(form.price)} / {form.pricePeriod}
-                  </span>
+                  <span>{formatGHS(form.price)} / {form.pricePeriod}</span>
                 </div>
               )}
+              <div className="flex justify-between">
+                <span className="text-[var(--text-muted)]">Location</span>
+                <span className="text-right">
+                  {form.lat && form.lng
+                    ? `${form.lat.toFixed(4)}, ${form.lng.toFixed(4)}`
+                    : "Not set"}
+                </span>
+              </div>
               <div className="flex justify-between">
                 <span className="text-[var(--text-muted)]">Photos</span>
                 <span>{form.photos.length}</span>
@@ -1095,8 +941,7 @@ export default function ListPage() {
               }
               className="w-full py-4 rounded-2xl bg-[var(--brand)] text-white font-bold text-base flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              Next
-              <ChevronRight className="w-5 h-5" />
+              Next <ChevronRight className="w-5 h-5" />
             </button>
           ) : (
             <button
