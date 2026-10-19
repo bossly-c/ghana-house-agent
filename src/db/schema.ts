@@ -76,7 +76,7 @@ export const properties = pgTable("properties", {
 export const propertyUnits = pgTable("property_units", {
   id:          uuid("id").primaryKey().defaultRandom(),
   propertyId:  uuid("property_id").notNull().references(() => properties.id, { onDelete: "cascade" }),
-  unitType:    text("unit_type").notNull(),             // e.g. "Single Room Self-Contain"
+  unitType:    text("unit_type").notNull(),
   bedrooms:    integer("bedrooms").notNull().default(0),
   bathrooms:   integer("bathrooms").notNull().default(0),
   halls:       integer("halls").notNull().default(0),
@@ -85,6 +85,8 @@ export const propertyUnits = pgTable("property_units", {
   available:   boolean("available").notNull().default(true),
   description: text("description"),
   position:    integer("position").notNull().default(0),
+  quantity:    integer("quantity").notNull().default(1),      // ← NEW
+  isVisible:   boolean("is_visible").notNull().default(true), // ← NEW
   createdAt:   timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

@@ -3,7 +3,21 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { ArrowLeft, Loader2, Save } from "lucide-react";
+import { ArrowLeft, Loader2, Save, Trash2 } from "lucide-react";
+
+/* ── Unit type ── */
+interface UnitData {
+  id?:         string;
+  unitType:    string;
+  bedrooms:    number;
+  bathrooms:   number;
+  halls:       number;
+  price:       number;
+  pricePeriod: string;
+  description: string;
+  quantity:    number;
+  isVisible:   boolean;
+}
 
 interface PropertyData {
   id:           string;
@@ -21,6 +35,7 @@ interface PropertyData {
   bathrooms:    number;
   halls:        number;
   isVisible:    boolean;
+  isCompound:   boolean;
   viewingDays:  string[];
   viewingTime:  string;
 }
@@ -37,17 +52,23 @@ const PROPERTY_TYPES = [
   "Townhouse","Villa","Office","Shop","Land","Warehouse","Other",
 ];
 
+const UNIT_TYPES = [
+  "Studio","1 Bedroom","2 Bedroom","3 Bedroom","4 Bedroom",
+  "Chamber & Hall","Single Room","Office","Shop","Warehouse",
+];
+
 const DAYS = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
 
 export default function EditListingClient() {
-  const { id }    = useParams<{ id: string }>();
-  const router    = useRouter();
-  const { user }  = useAuth();
+  const { id }   = useParams<{ id: string }>();
+  const router   = useRouter();
+  const { user } = useAuth();
 
-  const [loading,  setLoading]  = useState(true);
-  const [saving,   setSaving]   = useState(false);
-  const [error,    setError]    = useState("");
-  const [success,  setSuccess]  = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving,  setSaving]  = useState(false);
+  const [error,   setError]   = useState("");
+  const [success, setSuccess] = useState(false);
+  const [units,   setUnits]   = useState<UnitData[]>([]);
 
   const [form, setForm] = useState<PropertyData>({
     id:           "",
@@ -65,6 +86,7 @@ export default function EditListingClient() {
     bathrooms:    0,
     halls:        0,
     isVisible:    true,
+    isCompound:   false,
     viewingDays:  [],
     viewingTime:  "9:00 AM - 4:00 PM",
   });
@@ -93,9 +115,24 @@ export default function EditListingClient() {
             bathrooms:    p.bathrooms    ?? 0,
             halls:        p.halls        ?? 0,
             isVisible:    p.isVisible    ?? true,
+            isCompound:   p.isCompound   ?? false,
             viewingDays:  p.viewingDays  ?? [],
             viewingTime:  p.viewingTime  ?? "9:00 AM - 4:00 PM",
           });
+          if (Array.isArray(p.units)) {
+            setUnits(p.units.map((u: any) => ({
+              id:          u.id,
+              unitType:    u.unitType    ?? "Studio",
+              bedrooms:    u.bedrooms   ?? 0,
+              bathrooms:   u.bathrooms  ?? 0,
+              halls:       u.halls      ?? 0,
+              price:       u.price      ?? 0,
+              pricePeriod: u.pricePeriod ?? "month",
+              description: u.description ?? "",
+              quantity:    u.quantity   ?? 1,
+              isVisible:   u.isVisible  ?? true,
+            })));
+          }
         } else {
           setError("Property not found");
         }
@@ -107,14 +144,36 @@ export default function EditListingClient() {
   const set = (field: keyof PropertyData, value: any) =>
     setForm((prev) => ({ ...prev, [field]: value }));
 
-  const toggleDay = (day: string) => {
+  const toggleDay = (day: string) =>
     setForm((prev) => ({
       ...prev,
       viewingDays: prev.viewingDays.includes(day)
         ? prev.viewingDays.filter((d) => d !== day)
         : [...prev.viewingDays, day],
     }));
-  };
+
+  /* ── Unit helpers ── */
+  function updateUnit(i: number, field: keyof UnitData, value: any) {
+    setUnits((prev) => prev.map((u, idx) => idx === i ? { ...u, [field]: value } : u));
+  }
+
+  function removeUnit(i: number) {
+    setUnits((prev) => prev.filter((_, idx) => idx !== i));
+  }
+
+  function addUnit() {
+    setUnits((prev) => [...prev, {
+      unitType:    "Studio",
+      bedrooms:    0,
+      bathrooms:   0,
+      halls:       0,
+      price:       0,
+      pricePeriod: "month",
+      description: "",
+      quantity:    1,
+      isVisible:   true,
+    }]);
+  }
 
   /* ── Save ── */
   const handleSave = async () => {
@@ -128,10 +187,7 @@ export default function EditListingClient() {
     try {
       const res = await fetch(`/api/properties/${id}/edit`, {
         method:  "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization:  `Bearer ${token}`,
-        },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           title:        form.title,
           listingType:  form.listingType,
@@ -149,6 +205,7 @@ export default function EditListingClient() {
           isVisible:    form.isVisible,
           viewingDays:  form.viewingDays,
           viewingTime:  form.viewingTime,
+          units,
         }),
       });
 
@@ -166,7 +223,7 @@ export default function EditListingClient() {
     }
   };
 
-  /* ── UI ── */
+  /* ── UI states ── */
   if (loading) {
     return (
       <div className="fixed inset-0 flex items-center justify-center bg-white dark:bg-zinc-950">
@@ -192,8 +249,10 @@ export default function EditListingClient() {
       style={{ paddingTop: "env(safe-area-inset-top)" }}>
 
       {/* Header */}
-      <div className="sticky top-0 z-50 bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 px-4 py-3 flex items-center gap-3"
-        style={{ paddingTop: "calc(env(safe-area-inset-top) + 12px)" }}>
+      <div
+        className="sticky top-0 z-50 bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 px-4 flex items-center gap-3"
+        style={{ paddingTop: "calc(env(safe-area-inset-top) + 12px)", paddingBottom: "12px" }}
+      >
         <button onClick={() => router.back()}
           className="w-10 h-10 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center">
           <ArrowLeft size={18} />
@@ -205,19 +264,16 @@ export default function EditListingClient() {
         <button
           onClick={handleSave}
           disabled={saving || success}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl text-white text-sm font-bold transition"
+          className="flex items-center gap-2 px-4 py-2 rounded-xl text-white text-sm font-bold"
           style={{ background: success ? "#16a34a" : "#059669" }}
         >
           {saving
             ? <Loader2 size={15} className="animate-spin" />
-            : success
-              ? "✓ Saved!"
-              : <><Save size={15} /> Save</>
-          }
+            : success ? "✓ Saved!" : <><Save size={15} /> Save</>}
         </button>
       </div>
 
-      {/* Form */}
+      {/* Form body */}
       <div className="max-w-xl mx-auto px-4 py-6 space-y-5"
         style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 32px)" }}>
 
@@ -231,15 +287,13 @@ export default function EditListingClient() {
         <Section label="Listing Type">
           <div className="flex gap-3">
             {(["rent","sale"] as const).map((t) => (
-              <button key={t}
-                onClick={() => set("listingType", t)}
+              <button key={t} onClick={() => set("listingType", t)}
                 className="flex-1 py-3 rounded-xl font-bold text-sm border-2 transition"
                 style={{
-                  background:   form.listingType === t ? (t === "rent" ? "#dc2626" : "#16a34a") : "transparent",
-                  borderColor:  form.listingType === t ? (t === "rent" ? "#dc2626" : "#16a34a") : "#e4e4e7",
-                  color:        form.listingType === t ? "#fff" : "#3f3f46",
-                }}
-              >
+                  background:  form.listingType === t ? (t === "rent" ? "#dc2626" : "#16a34a") : "transparent",
+                  borderColor: form.listingType === t ? (t === "rent" ? "#dc2626" : "#16a34a") : "#e4e4e7",
+                  color:       form.listingType === t ? "#fff" : "#3f3f46",
+                }}>
                 {t === "rent" ? "🔴 For Rent" : "🟢 For Sale"}
               </button>
             ))}
@@ -261,22 +315,25 @@ export default function EditListingClient() {
           </select>
         </Section>
 
-        {/* Price */}
-        <Section label="Price (GH₵)">
-          <div className="flex gap-3">
-            <input className="input flex-1" type="number" min={0} value={form.price}
-              onChange={(e) => set("price", e.target.value)}
-              placeholder="e.g. 2500" />
-            {form.listingType === "rent" && (
-              <select className="input w-32" value={form.pricePeriod}
-                onChange={(e) => set("pricePeriod", e.target.value)}>
-                {["day","week","month","year"].map((p) => (
-                  <option key={p} value={p}>per {p}</option>
-                ))}
-              </select>
-            )}
-          </div>
-        </Section>
+        {/* Price — only shown for non-compound */}
+        {!form.isCompound && (
+          <Section label="Price (GH₵)">
+            <div className="flex gap-3">
+              <input className="input flex-1" type="number" min={0}
+                value={form.price}
+                onChange={(e) => set("price", e.target.value)}
+                placeholder="e.g. 2500" />
+              {form.listingType === "rent" && (
+                <select className="input w-32" value={form.pricePeriod}
+                  onChange={(e) => set("pricePeriod", e.target.value)}>
+                  {["day","week","month","year"].map((p) => (
+                    <option key={p} value={p}>per {p}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+          </Section>
+        )}
 
         {/* Location */}
         <Section label="Location">
@@ -295,23 +352,142 @@ export default function EditListingClient() {
             placeholder="Street address (optional)" />
         </Section>
 
-        {/* Rooms */}
-        <Section label="Rooms">
-          <div className="flex gap-3">
-            {([
-              { label: "Beds",  field: "bedrooms"  },
-              { label: "Baths", field: "bathrooms" },
-              { label: "Halls", field: "halls"     },
-            ] as const).map(({ label, field }) => (
-              <div key={field} className="flex-1">
-                <p className="label-sm mb-1">{label}</p>
-                <input className="input text-center" type="number" min={0}
-                  value={form[field]}
-                  onChange={(e) => set(field, e.target.value)} />
-              </div>
-            ))}
-          </div>
-        </Section>
+        {/* Rooms — only shown for non-compound */}
+        {!form.isCompound && (
+          <Section label="Rooms">
+            <div className="flex gap-3">
+              {([
+                { label: "Beds",  field: "bedrooms"  },
+                { label: "Baths", field: "bathrooms" },
+                { label: "Halls", field: "halls"     },
+              ] as const).map(({ label, field }) => (
+                <div key={field} className="flex-1">
+                  <p className="label-sm mb-1">{label}</p>
+                  <input className="input text-center" type="number" min={0}
+                    value={form[field]}
+                    onChange={(e) => set(field, e.target.value)} />
+                </div>
+              ))}
+            </div>
+          </Section>
+        )}
+
+        {/* Compound units */}
+        {form.isCompound && (
+          <Section label="Compound Units">
+            <div className="space-y-4">
+              {units.map((unit, i) => (
+                <div
+                  key={unit.id ?? i}
+                  className="rounded-2xl border-2 p-4 space-y-3 bg-white dark:bg-zinc-900"
+                  style={{ borderColor: unit.isVisible ? "#e4e4e7" : "#dc2626" }}
+                >
+                  {/* Unit header */}
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-zinc-500 uppercase tracking-wide">
+                      Unit {i + 1}
+                    </span>
+                    <button onClick={() => removeUnit(i)}
+                      className="flex items-center gap-1 text-xs text-red-500 font-medium">
+                      <Trash2 size={12} /> Remove
+                    </button>
+                  </div>
+
+                  {/* Unit type dropdown */}
+                  <div>
+                    <p className="label-sm mb-1">Unit Type</p>
+                    <select className="input" value={unit.unitType}
+                      onChange={(e) => updateUnit(i, "unitType", e.target.value)}>
+                      {UNIT_TYPES.map((t) => <option key={t}>{t}</option>)}
+                    </select>
+                  </div>
+
+                  {/* Quantity */}
+                  <div>
+                    <p className="label-sm mb-1">Units Available</p>
+                    <input className="input" type="number" min={1}
+                      value={unit.quantity}
+                      onChange={(e) => updateUnit(i, "quantity", Number(e.target.value))} />
+                  </div>
+
+                  {/* Rooms */}
+                  <div className="flex gap-3">
+                    {([
+                      { label: "Beds",  field: "bedrooms"  },
+                      { label: "Baths", field: "bathrooms" },
+                      { label: "Halls", field: "halls"     },
+                    ] as const).map(({ label, field }) => (
+                      <div key={field} className="flex-1">
+                        <p className="label-sm mb-1">{label}</p>
+                        <input className="input text-center" type="number" min={0}
+                          value={unit[field]}
+                          onChange={(e) => updateUnit(i, field, Number(e.target.value))} />
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Price */}
+                  <div className="flex gap-3">
+                    <div className="flex-1">
+                      <p className="label-sm mb-1">Price (GH₵)</p>
+                      <input className="input" type="number" min={0}
+                        value={unit.price}
+                        onChange={(e) => updateUnit(i, "price", Number(e.target.value))} />
+                    </div>
+                    <div className="w-28">
+                      <p className="label-sm mb-1">Period</p>
+                      <select className="input" value={unit.pricePeriod}
+                        onChange={(e) => updateUnit(i, "pricePeriod", e.target.value)}>
+                        {["day","week","month","year"].map((p) => (
+                          <option key={p} value={p}>per {p}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Description */}
+                  <div>
+                    <p className="label-sm mb-1">Description (optional)</p>
+                    <textarea className="input resize-none" rows={2}
+                      value={unit.description}
+                      onChange={(e) => updateUnit(i, "description", e.target.value)}
+                      placeholder="Any extra details for this unit…" />
+                  </div>
+
+                  {/* Per-unit visibility toggle */}
+                  <button
+                    type="button"
+                    onClick={() => updateUnit(i, "isVisible", !unit.isVisible)}
+                    className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl border-2 transition"
+                    style={{
+                      borderColor: unit.isVisible ? "#059669" : "#dc2626",
+                      background:  unit.isVisible ? "#f0fdf4" : "#fff5f5",
+                    }}
+                  >
+                    <div className="w-9 h-5 rounded-full relative flex-none"
+                      style={{ background: unit.isVisible ? "#059669" : "#dc2626" }}>
+                      <div className="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all"
+                        style={{ left: unit.isVisible ? "18px" : "2px" }} />
+                    </div>
+                    <span className="text-xs font-bold"
+                      style={{ color: unit.isVisible ? "#059669" : "#dc2626" }}>
+                      {unit.isVisible ? "Visible on map" : "Hidden from map"}
+                    </span>
+                  </button>
+                </div>
+              ))}
+
+              {/* Add unit button */}
+              <button
+                type="button"
+                onClick={addUnit}
+                className="w-full py-3 rounded-2xl border-2 border-dashed text-sm font-semibold text-emerald-600 border-emerald-300 hover:bg-emerald-50 transition"
+              >
+                + Add Unit Type
+              </button>
+            </div>
+          </Section>
+        )}
 
         {/* Description */}
         <Section label="Description">
@@ -324,15 +500,13 @@ export default function EditListingClient() {
         <Section label="Available Viewing Days">
           <div className="flex flex-wrap gap-2">
             {DAYS.map((day) => (
-              <button key={day}
-                onClick={() => toggleDay(day)}
+              <button key={day} onClick={() => toggleDay(day)}
                 className="px-3 py-1.5 rounded-full text-xs font-bold border-2 transition"
                 style={{
                   background:  form.viewingDays.includes(day) ? "#059669" : "transparent",
                   borderColor: form.viewingDays.includes(day) ? "#059669" : "#e4e4e7",
                   color:       form.viewingDays.includes(day) ? "#fff"    : "#3f3f46",
-                }}
-              >
+                }}>
                 {day.slice(0, 3)}
               </button>
             ))}
@@ -346,7 +520,7 @@ export default function EditListingClient() {
             placeholder="e.g. 9:00 AM - 4:00 PM" />
         </Section>
 
-        {/* Visibility */}
+        {/* Overall visibility */}
         <Section label="Map Visibility">
           <button
             onClick={() => set("isVisible", !form.isVisible)}
@@ -356,7 +530,7 @@ export default function EditListingClient() {
               background:  form.isVisible ? "#f0fdf4" : "#fafafa",
             }}
           >
-            <div className="w-10 h-6 rounded-full transition relative"
+            <div className="w-10 h-6 rounded-full relative"
               style={{ background: form.isVisible ? "#059669" : "#d4d4d8" }}>
               <div className="absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all"
                 style={{ left: form.isVisible ? "22px" : "4px" }} />
@@ -368,19 +542,14 @@ export default function EditListingClient() {
           </button>
         </Section>
 
-        {/* Save button (bottom) */}
+        {/* Save bottom */}
         <button
           onClick={handleSave}
           disabled={saving || success}
           className="w-full py-4 rounded-2xl text-white font-bold text-base shadow-lg transition"
           style={{ background: success ? "#16a34a" : "#059669" }}
         >
-          {saving
-            ? "Saving…"
-            : success
-              ? "✓ Saved! Going back…"
-              : "Save Changes"
-          }
+          {saving ? "Saving…" : success ? "✓ Saved! Going back…" : "Save Changes"}
         </button>
       </div>
     </div>

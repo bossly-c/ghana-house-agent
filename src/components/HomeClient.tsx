@@ -12,8 +12,9 @@ import AuthModal from "@/components/AuthModal";
 import NavigationPage from "@/components/NavigationPage";
 import type { PropertyListItem, PropertyFilters } from "@/lib/types";
 import { distanceMetres } from "@/lib/geo";
-import { SlidersHorizontal, Locate, Plus, Search, X } from "lucide-react";
+import { SlidersHorizontal, Plus } from "lucide-react";
 import Link from "next/link";
+import { useBackButton } from "@/hooks/useBackButton";
 
 const MapView = dynamic(() => import("@/components/MapView"), { ssr: false });
 
@@ -84,16 +85,6 @@ export default function HomeClient({ initial }: Props) {
 }
 
 /* ══════════════════════════════════════════════════
-   Nominatim result type
-══════════════════════════════════════════════════ */
-interface NominatimResult {
-  place_id: number;
-  display_name: string;
-  lat: string;
-  lon: string;
-}
-
-/* ══════════════════════════════════════════════════
    App shell
 ══════════════════════════════════════════════════ */
 function AppShell({ initial }: Props) {
@@ -102,60 +93,30 @@ function AppShell({ initial }: Props) {
   const [tab,          setTab]          = useState<Tab>("map");
   const [filters,      setFilters]      = useState<PropertyFilters>({});
   const [locateSignal, setLocateSignal] = useState(0);
-  const [flyToSignal,  setFlyToSignal]  = useState<{ lat: number; lng: number; zoom?: number } | null>(null);
   const [userPos,      setUserPos]      = useState<{ lat: number; lng: number } | null>(null);
   const [navigatingTo, setNavigatingTo] = useState<{ name: string; lat: number; lng: number } | null>(null);
-
-  /* ── Search state ── */
-  const [searchOpen,    setSearchOpen]    = useState(false);
-  const [searchQuery,   setSearchQuery]   = useState("");
-  const [searchResults, setSearchResults] = useState<NominatimResult[]>([]);
-  const [searching,     setSearching]     = useState(false);
-  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const notifiedRef = useRef<Set<string>>(new Set());
 
   /* ── Fetch properties (initial + polling every 30s) ── */
-const fetchProps = useCallback(async () => {
-  const params = new URLSearchParams();
-  if (filters.listing) params.set("listing", filters.listing);
-  if (filters.type)    params.set("type",    filters.type);
-  if (filters.region)  params.set("region",  filters.region);
-  if (filters.beds)    params.set("beds",    String(filters.beds));
-  try {
-    const r = await fetch(`/api/properties?${params}`);
-    const d = await r.json();
-    setProperties(Array.isArray(d?.properties) ? d.properties : []);
-  } catch { /* ignore */ }
-}, [filters]);
+  const fetchProps = useCallback(async () => {
+    const params = new URLSearchParams();
+    if (filters.listing) params.set("listing", filters.listing);
+    if (filters.type)    params.set("type",    filters.type);
+    if (filters.region)  params.set("region",  filters.region);
+    if (filters.beds)    params.set("beds",    String(filters.beds));
+    try {
+      const r = await fetch(`/api/properties?${params}`);
+      const d = await r.json();
+      setProperties(Array.isArray(d?.properties) ? d.properties : []);
+    } catch { /* ignore */ }
+  }, [filters]);
 
-useEffect(() => {
-  fetchProps();
-  const interval = setInterval(fetchProps, 30_000);
-  return () => clearInterval(interval);
-}, [fetchProps]);
-
-  /* ── Nominatim search (debounced 500ms) ── */
   useEffect(() => {
-    if (!searchQuery.trim()) { setSearchResults([]); return; }
-
-    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
-    searchTimerRef.current = setTimeout(async () => {
-      setSearching(true);
-      try {
-        const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery + " Ghana")}&limit=6&countrycodes=gh`;
-        const res = await fetch(url, { headers: { "Accept-Language": "en" } });
-        const data: NominatimResult[] = await res.json();
-        setSearchResults(data);
-      } catch {
-        setSearchResults([]);
-      } finally {
-        setSearching(false);
-      }
-    }, 500);
-
-    return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current); };
-  }, [searchQuery]);
+    fetchProps();
+    const interval = setInterval(fetchProps, 30_000);
+    return () => clearInterval(interval);
+  }, [fetchProps]);
 
   /* ── Geofence notifications ── */
   const handleUserLocation = useCallback(async (lat: number, lng: number) => {
@@ -189,12 +150,37 @@ useEffect(() => {
     setNavigatingTo(dest);
   }, []);
 
-  function pickSearchResult(r: NominatimResult) {
-    setFlyToSignal({ lat: parseFloat(r.lat), lng: parseFloat(r.lon), zoom: 14 });
-    setSearchQuery(r.display_name.split(",")[0]);
-    setSearchResults([]);
-    setSearchOpen(false);
-  }
+  /* ══════════════════════════════════════════════════
+     Back button — priority stack
+     30 = navigation page (highest)
+     20 = property sheet
+     10 = non-map tab
+     0  = map root → double-tap exits (handled by hook system itself)
+  ══════════════════════════════════════════════════ */
+
+  // Priority 30 — Navigation overlay
+  useBackButton(
+    !!navigatingTo,
+    useCallback(() => setNavigatingTo(null), []),
+    "navigation-page",
+    30
+  );
+
+  // Priority 20 — Property sheet
+  useBackButton(
+    !!selectedId,
+    useCallback(() => setSelectedId(null), []),
+    "property-sheet",
+    20
+  );
+
+  // Priority 10 — Non-map tab → return to map
+  useBackButton(
+    tab !== "map" && !selectedId && !navigatingTo,
+    useCallback(() => setTab("map"), []),
+    "tab-switch",
+    10
+  );
 
   /* ── Full-screen navigation overlay ── */
   if (navigatingTo) {
@@ -212,7 +198,7 @@ useEffect(() => {
 
       {/* ── App name header ── */}
       <header
-        className="flex-none bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 flex items-center gap-2 px-4"
+        className="flex-none bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 flex items-center px-4"
         style={{ paddingTop: "calc(env(safe-area-inset-top) + 12px)", paddingBottom: "12px", zIndex: 999 }}
       >
         <h1
@@ -221,26 +207,6 @@ useEffect(() => {
         >
           Ghana House Agent
         </h1>
-
-        {tab === "map" && (
-          <>
-            <button
-              onClick={() => setSearchOpen(o => !o)}
-              className="w-10 h-10 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center"
-              aria-label="Search location"
-            >
-              <Search size={17} className="text-zinc-600 dark:text-zinc-300" />
-            </button>
-
-            <button
-              onClick={() => setLocateSignal(s => s + 1)}
-              className="w-10 h-10 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center"
-              aria-label="Locate me"
-            >
-              <Locate size={17} className="text-zinc-600 dark:text-zinc-300" />
-            </button>
-          </>
-        )}
       </header>
 
       {/* ── Content area ── */}
@@ -251,86 +217,41 @@ useEffect(() => {
           className={`absolute inset-0 ${tab === "map" ? "block" : "hidden"}`}
           style={{ paddingBottom: "calc(60px + env(safe-area-inset-bottom))" }}
         >
-          <MapView
-  properties={properties}
-  selectedId={selectedId}                    // ← was: selectedId !== null ? Number(selectedId) : null
-  onSelect={id => setSelectedId(id)}         // ← was: onSelect={id => setSelectedId(String(id))}
-  onUserLocation={handleUserLocation}
-  locateSignal={locateSignal}
-  flyToSignal={flyToSignal}
-/>
+                    <MapView
+            properties={properties}
+            selectedId={selectedId}
+            onSelect={id => setSelectedId(id)}
+            onUserLocation={handleUserLocation}
+            locateSignal={locateSignal}
+            hideControls={!!selectedId}
+          />
 
-          {/* ── Search bar overlay ── */}
-          {searchOpen && (
-            <div className="absolute top-2 left-2 right-2 z-[600]">
-              <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl overflow-hidden border border-zinc-200 dark:border-zinc-700">
-                <div className="flex items-center gap-2 px-3 py-2">
-                  <Search size={16} className="text-zinc-400 flex-none" />
-                  <input
-                    autoFocus
-                    type="text"
-                    placeholder="Search any place in Ghana…"
-                    value={searchQuery}
-                    onChange={e => setSearchQuery(e.target.value)}
-                    className="flex-1 bg-transparent text-sm outline-none text-zinc-800 dark:text-zinc-100 placeholder:text-zinc-400"
-                  />
-                  {searching && (
-                    <span className="text-xs text-zinc-400 flex-none">Searching…</span>
-                  )}
-                  <button onClick={() => { setSearchOpen(false); setSearchQuery(""); setSearchResults([]); }}>
-                    <X size={16} className="text-zinc-400" />
-                  </button>
-                </div>
-
-                {searchResults.length > 0 && (
-                  <ul className="border-t border-zinc-100 dark:border-zinc-800 max-h-64 overflow-y-auto">
-                    {searchResults.map(r => (
-                      <li key={r.place_id}>
-                        <button
-                          onClick={() => pickSearchResult(r)}
-                          className="w-full text-left px-4 py-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800 border-b border-zinc-50 dark:border-zinc-800 last:border-0"
-                        >
-                          <span className="font-medium text-zinc-800 dark:text-zinc-100 block truncate">
-                            {r.display_name.split(",")[0]}
-                          </span>
-                          <span className="text-xs text-zinc-400 truncate block">
-                            {r.display_name.split(",").slice(1, 3).join(",")}
-                          </span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-
-                {searchQuery.trim() && !searching && searchResults.length === 0 && (
-                  <p className="px-4 py-3 text-sm text-zinc-400">No places found in Ghana</p>
-                )}
-              </div>
+          {/* Filter chips — hidden when sheet is open so they don't clash */}
+          {!selectedId && (
+            <div className="absolute top-3 left-3 right-3 z-[500]">
+              <FilterBar filters={filters} onChange={setFilters} />
             </div>
           )}
 
-          {/* Filter chips */}
-          <div className="absolute top-3 left-3 right-16 z-[500]">
-            <FilterBar filters={filters} onChange={setFilters} />
-          </div>
-
-          {/* List Property FAB */}
-          <div
-            className="absolute left-3 right-3 z-[500] flex justify-end"
-            style={{ bottom: "calc(68px + env(safe-area-inset-bottom))" }}
-          >
-            <Link
-              href="/list"
-              className="flex items-center gap-2 text-white font-semibold px-5 py-3 rounded-2xl shadow-xl"
-              style={{ background: "#059669" }}
+          {/* List Property FAB — hidden when sheet is open */}
+          {!selectedId && (
+            <div
+              className="absolute left-3 right-3 z-[500] flex justify-end"
+              style={{ bottom: "calc(68px + env(safe-area-inset-bottom))" }}
             >
-              <Plus size={18} />
-              <span className="text-sm">List Property</span>
-            </Link>
-          </div>
+              <Link
+                href="/list"
+                className="flex items-center gap-2 text-white font-semibold px-5 py-3 rounded-2xl shadow-xl"
+                style={{ background: "#059669" }}
+              >
+                <Plus size={18} />
+                <span className="text-sm">List Property</span>
+              </Link>
+            </div>
+          )}
         </div>
 
-        {/* FAVOURITES TAB — was incorrectly "saved", must match Tab type */}
+        {/* FAVOURITES TAB */}
         {tab === "favourites" && (
           <div className="absolute inset-0 overflow-y-auto" style={{ paddingBottom: "calc(60px + env(safe-area-inset-bottom))" }}>
             <FavouritesTab onSelect={id => { setSelectedId(String(id)); setTab("map"); }} />
@@ -338,11 +259,11 @@ useEffect(() => {
         )}
 
         {/* PROFILE TAB */}
-{tab === "profile" && (
-  <div className="absolute inset-0 overflow-y-auto" style={{ paddingBottom: "calc(60px + env(safe-area-inset-bottom))" }}>
-    <ProfileTab onRefresh={fetchProps} />
-  </div>
-)}
+        {tab === "profile" && (
+          <div className="absolute inset-0 overflow-y-auto" style={{ paddingBottom: "calc(60px + env(safe-area-inset-bottom))" }}>
+            <ProfileTab onRefresh={fetchProps} />
+          </div>
+        )}
 
         {/* SETTINGS TAB */}
         {tab === "settings" && (

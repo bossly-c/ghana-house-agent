@@ -11,6 +11,7 @@ interface Props {
   onUserLocation?: (lat: number, lng: number) => void;
   locateSignal?:   number;
   flyToSignal?:    FlyTo | null;
+  hideControls?:   boolean;   // ← ADD
 }
 
 function isCapacitor(): boolean {
@@ -24,6 +25,7 @@ export default function MapView({
   onUserLocation,
   locateSignal,
   flyToSignal,
+  hideControls,   // ← ADD
 }: Props) {
   const containerRef    = useRef<HTMLDivElement>(null);
   const mapRef          = useRef<any>(null);
@@ -192,11 +194,11 @@ export default function MapView({
         shadowUrl:     "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
       });
 
-      const map = L.map(containerRef.current!, {
-        center:      [7.9465, -1.0232],
-        zoom:        7,
-        zoomControl: false,
-      });
+      const map = L.map(container, {
+  center: [7.9465, -1.0232],
+  zoom: 7,
+  zoomControl: false,  // ← removes +/- magnification buttons
+});
       mapRef.current = map;
 
       // Zoom control at topright
@@ -303,6 +305,15 @@ export default function MapView({
       { duration: 1.2 }
     );
   }, [flyToSignal]);
+
+/* ── Hide/show map controls when property sheet opens/closes ── */
+useEffect(() => {
+  if (!mapRef.current) return;
+  const el = mapRef.current
+    .getContainer()
+    .querySelector(".leaflet-control-container") as HTMLElement | null;
+  if (el) el.style.display = hideControls ? "none" : "";
+}, [hideControls]);
 
   /* ── Property markers ── */
   useEffect(() => {
