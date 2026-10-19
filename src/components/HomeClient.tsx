@@ -116,26 +116,24 @@ function AppShell({ initial }: Props) {
   const notifiedRef = useRef<Set<string>>(new Set());
 
   /* ── Fetch properties (initial + polling every 30s) ── */
-useEffect(() => {
+const fetchProps = useCallback(async () => {
   const params = new URLSearchParams();
   if (filters.listing) params.set("listing", filters.listing);
   if (filters.type)    params.set("type",    filters.type);
   if (filters.region)  params.set("region",  filters.region);
   if (filters.beds)    params.set("beds",    String(filters.beds));
-
-  async function fetchProps() {
-    try {
-      const r = await fetch(`/api/properties?${params}`);
-      const d = await r.json();
-      setProperties(Array.isArray(d?.properties) ? d.properties : []);
-    } catch { /* ignore */ }
-  }
-
-  fetchProps(); // immediate on mount / filter change
-
-  const interval = setInterval(fetchProps, 30_000); // poll every 30s
-  return () => clearInterval(interval);
+  try {
+    const r = await fetch(`/api/properties?${params}`);
+    const d = await r.json();
+    setProperties(Array.isArray(d?.properties) ? d.properties : []);
+  } catch { /* ignore */ }
 }, [filters]);
+
+useEffect(() => {
+  fetchProps();
+  const interval = setInterval(fetchProps, 30_000);
+  return () => clearInterval(interval);
+}, [fetchProps]);
 
   /* ── Nominatim search (debounced 500ms) ── */
   useEffect(() => {
@@ -340,11 +338,11 @@ useEffect(() => {
         )}
 
         {/* PROFILE TAB */}
-        {tab === "profile" && (
-          <div className="absolute inset-0 overflow-y-auto" style={{ paddingBottom: "calc(60px + env(safe-area-inset-bottom))" }}>
-            <ProfileTab />
-          </div>
-        )}
+{tab === "profile" && (
+  <div className="absolute inset-0 overflow-y-auto" style={{ paddingBottom: "calc(60px + env(safe-area-inset-bottom))" }}>
+    <ProfileTab onRefresh={fetchProps} />
+  </div>
+)}
 
         {/* SETTINGS TAB */}
         {tab === "settings" && (

@@ -5,7 +5,11 @@ import { useAuth } from "@/context/AuthContext";
 import AuthModal from "./AuthModal";
 import MyListings from "./MyListings";
 
-export default function ProfileTab() {
+interface ProfileTabProps {
+  onRefresh?: () => void;
+}
+
+export default function ProfileTab({ onRefresh }: ProfileTabProps) {
   const { user, logout } = useAuth();
   const [showAuth, setShowAuth] = useState(false);
   const [section,  setSection]  = useState<"info" | "listings">("info");
@@ -141,7 +145,7 @@ export default function ProfileTab() {
           </div>
         )}
 
-        {section === "listings" && <MyListings token={token} />}
+        {section === "listings" && <MyListings token={token} onRefresh={onRefresh} />}
       </div>
     </div>
   );

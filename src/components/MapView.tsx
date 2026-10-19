@@ -25,15 +25,26 @@ export default function MapView({
   locateSignal,
   flyToSignal,
 }: Props) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const mapRef       = useRef<any>(null);
-  const userMarker   = useRef<any>(null);
-  const markersRef   = useRef<Record<string, any>>({});
-  const watchIdRef   = useRef<string | number | null>(null);
-  const LRef         = useRef<any>(null);
+  const containerRef    = useRef<HTMLDivElement>(null);
+  const mapRef          = useRef<any>(null);
+  const userMarker      = useRef<any>(null);
+  const markersRef      = useRef<Record<string, any>>({});
+  const watchIdRef      = useRef<string | number | null>(null);
+  const LRef            = useRef<any>(null);
+  const hasCenteredRef  = useRef(false);   // ← NEW: fly to user only once per session
+  const retryTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null); // ← NEW: retry when GPS off
 
+  /* ── Place / update the blue user dot ── */
   function placeUserDot(L: any, map: any, lat: number, lng: number) {
     onUserLocation?.(lat, lng);
+
+    // ── Auto-center on FIRST successful fix (covers both getCurrentPosition
+    //    and watchPosition callbacks, so it works even if getCurrentPosition
+    //    timed out because location was initially off) ──────────────────────
+    if (!hasCenteredRef.current) {
+      hasCenteredRef.current = true;
+      map.flyTo([lat, lng], 15, { duration: 1.2 });
+    }
 
     const icon = L.divIcon({
       className: "",
@@ -78,7 +89,15 @@ export default function MapView({
     }
   }
 
+  /* ── Request + watch location ── */
   async function startLocation(L: any, map: any) {
+    // Clear any existing retry timer
+    if (retryTimerRef.current) {
+      clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
+
+    // Stop existing watch
     if (watchIdRef.current !== null) {
       if (isCapacitor()) {
         const { Geolocation } = await import("@capacitor/geolocation");
@@ -92,13 +111,29 @@ export default function MapView({
     if (isCapacitor()) {
       try {
         const { Geolocation } = await import("@capacitor/geolocation");
+
+        // Always request — triggers OS permission dialog on first launch
         const perm = await Geolocation.requestPermissions();
-        if (perm.location !== "granted") { console.warn("Location permission denied"); return; }
+        if (perm.location !== "granted") {
+          console.warn("Location permission denied");
+          return;
+        }
+
+        // Try to get an immediate fix. If GPS is off this will time out —
+        // that's fine, the watchPosition below will fire once GPS turns on.
         try {
-          const pos = await Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 10000 });
+          const pos = await Geolocation.getCurrentPosition({
+            enableHighAccuracy: true,
+            timeout: 8000,
+          });
           placeUserDot(L, map, pos.coords.latitude, pos.coords.longitude);
-          map.flyTo([pos.coords.latitude, pos.coords.longitude], 14, { duration: 1.2 });
-        } catch (e) { console.warn("getCurrentPosition failed:", e); }
+        } catch {
+          // GPS was off — watchPosition will deliver the first fix when it comes on
+          console.warn("getCurrentPosition timed out — waiting for watchPosition fix");
+        }
+
+        // Watch continuously — this fires as soon as GPS becomes available,
+        // so turning on location mid-session automatically centres the map
         watchIdRef.current = await Geolocation.watchPosition(
           { enableHighAccuracy: true },
           (position, err) => {
@@ -106,26 +141,40 @@ export default function MapView({
             placeUserDot(L, map, position.coords.latitude, position.coords.longitude);
           }
         );
-      } catch (e) { console.warn("Capacitor Geolocation error:", e); }
+      } catch (e) {
+        console.warn("Capacitor Geolocation error:", e);
+      }
+
     } else {
+      // Web browser path
       if (!("geolocation" in navigator)) return;
-      const options = { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 };
+
+      // Get immediate fix
       navigator.geolocation.getCurrentPosition(
-        (p) => {
-          placeUserDot(L, map, p.coords.latitude, p.coords.longitude);
-          map.flyTo([p.coords.latitude, p.coords.longitude], 14, { duration: 1.2 });
+        (pos) => {
+          placeUserDot(L, map, pos.coords.latitude, pos.coords.longitude);
         },
-        (err) => console.warn("getCurrentPosition error:", err),
-        options
+        (err) => {
+          console.warn("getCurrentPosition error:", err.code, err.message);
+          // If location services are off (code 2 = POSITION_UNAVAILABLE),
+          // schedule a retry in 4 s so it auto-centres when user turns GPS on
+          if (err.code === 2) {
+            retryTimerRef.current = setTimeout(() => startLocation(L, map), 4000);
+          }
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
       );
+
+      // Also watch for live updates
       watchIdRef.current = navigator.geolocation.watchPosition(
-        (p) => placeUserDot(L, map, p.coords.latitude, p.coords.longitude),
+        (pos) => placeUserDot(L, map, pos.coords.latitude, pos.coords.longitude),
         (err) => console.warn("watchPosition error:", err),
         { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
       ) as unknown as string;
     }
   }
 
+  /* ── Init map once ── */
   useEffect(() => {
     if (!containerRef.current) return;
     const container = containerRef.current;
@@ -135,23 +184,78 @@ export default function MapView({
     import("leaflet").then(async (L) => {
       if (mapRef.current || !containerRef.current) return;
       LRef.current = L;
+
       delete (L.Icon.Default.prototype as any)._getIconUrl;
       L.Icon.Default.mergeOptions({
         iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
         iconUrl:       "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
         shadowUrl:     "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
       });
-      const map = L.map(containerRef.current!, { center: [7.9465, -1.0232], zoom: 7, zoomControl: false });
+
+      const map = L.map(containerRef.current!, {
+        center:      [7.9465, -1.0232],
+        zoom:        7,
+        zoomControl: false,
+      });
       mapRef.current = map;
+
+      // Zoom control at topright
       L.control.zoom({ position: "topright" }).addTo(map);
+
+      // ── Custom "locate me" button directly on map, below zoom ───────────
+      // This lives on the map so users see it next to the zoom buttons.
+      const LocateControl = L.Control.extend({
+        onAdd() {
+          const div = L.DomUtil.create("div", "leaflet-bar leaflet-control");
+          div.style.cssText = "margin-top:4px;";
+
+          const btn = L.DomUtil.create("a", "", div) as HTMLAnchorElement;
+          btn.href  = "#";
+          btn.title = "Centre on my location";
+          btn.setAttribute("role", "button");
+          btn.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18"
+              viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="2.2"
+              stroke-linecap="round" stroke-linejoin="round"
+              style="display:block;margin:auto;">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>
+              <circle cx="12" cy="12" r="8" stroke-dasharray="none" opacity=".25"/>
+            </svg>`;
+          btn.style.cssText = `
+            display:flex;align-items:center;justify-content:center;
+            width:34px;height:34px;cursor:pointer;background:#fff;`;
+
+          L.DomEvent.on(btn, "click", (e: Event) => {
+            L.DomEvent.preventDefault(e);
+            L.DomEvent.stopPropagation(e);
+            if (userMarker.current) {
+              // Already have a fix — just fly to it
+              map.flyTo(userMarker.current.getLatLng(), 15, { duration: 1 });
+            } else {
+              // No fix yet — re-request and centre on first result
+              hasCenteredRef.current = false;
+              startLocation(L, map);
+            }
+          });
+
+          return div;
+        },
+      });
+      new LocateControl({ position: "topright" }).addTo(map);
+      // ────────────────────────────────────────────────────────────────────
+
       L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        maxZoom: 19,
+        maxZoom:     19,
         attribution: "© OpenStreetMap contributors",
       }).addTo(map);
+
       await startLocation(L, map);
     });
 
     return () => {
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+
       if (watchIdRef.current !== null) {
         if (isCapacitor()) {
           import("@capacitor/geolocation").then(({ Geolocation }) => {
@@ -162,25 +266,42 @@ export default function MapView({
         }
         watchIdRef.current = null;
       }
-      if (mapRef.current) { mapRef.current.remove(); mapRef.current = null; userMarker.current = null; }
-      if (containerRef.current) { (containerRef.current as any)._leaflet_id = null; }
+
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current    = null;
+        userMarker.current = null;
+      }
+
+      if (containerRef.current) {
+        (containerRef.current as any)._leaflet_id = null;
+      }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /* ── locateSignal from header button (still works too) ── */
   useEffect(() => {
-    if (!locateSignal || !mapRef.current || !LRef.current) return;
-    startLocation(LRef.current, mapRef.current).then(() => {
-      if (userMarker.current && mapRef.current) {
-        mapRef.current.flyTo(userMarker.current.getLatLng(), 15, { duration: 1 });
-      }
-    });
+    if (!locateSignal || !mapRef.current) return;
+    if (userMarker.current) {
+      // Have a fix — just re-centre
+      mapRef.current.flyTo(userMarker.current.getLatLng(), 15, { duration: 1 });
+    } else if (LRef.current) {
+      // No fix — restart location
+      hasCenteredRef.current = false;
+      startLocation(LRef.current, mapRef.current);
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locateSignal]);
 
+  /* ── Fly to search result ── */
   useEffect(() => {
     if (!flyToSignal || !mapRef.current) return;
-    mapRef.current.flyTo([flyToSignal.lat, flyToSignal.lng], flyToSignal.zoom ?? 14, { duration: 1.2 });
+    mapRef.current.flyTo(
+      [flyToSignal.lat, flyToSignal.lng],
+      flyToSignal.zoom ?? 14,
+      { duration: 1.2 }
+    );
   }, [flyToSignal]);
 
   /* ── Property markers ── */
@@ -195,8 +316,8 @@ export default function MapView({
         if (p.lat === null || p.lng === null) return;
         if (!isFinite(p.lat!) || !isFinite(p.lng!)) return;
 
-        const color  = p.listingType === "rent" ? "#dc2626" : "#16a34a"; // ← darker red/green for better contrast
-        const isSel  = String(p.id) === String(selectedId ?? "");
+        const color = p.listingType === "rent" ? "#dc2626" : "#16a34a";
+        const isSel = String(p.id) === String(selectedId ?? "");
         const units: any[] = (p as any).units ?? [];
 
         const price = (p as any).isCompound && units.length
@@ -205,12 +326,6 @@ export default function MapView({
 
         const icon = L.divIcon({
           className: "",
-          // ─────────────────────────────────────────────────────────────────
-          // FIX: border changed from white → dark translucent so the pill
-          //      stands out against the cream OSM map background.
-          //      text-shadow added so white price text is always crisp.
-          //      Box-shadow made stronger for better map separation.
-          // ─────────────────────────────────────────────────────────────────
           html: `<div style="
             background:${color};
             color:#fff;
