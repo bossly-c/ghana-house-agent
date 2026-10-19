@@ -173,7 +173,7 @@ export async function getProperty(id: string): Promise<PropertyDetail | null> {
   const viewingDays = (p.viewingDays as string[]) ?? [];
   const viewingTime = p.viewingTime ?? "08:00 – 18:00";
 
-  return {
+    return {
     id:           p.id,
     listingType:  p.listingType as ListingType,
     propertyType: p.propertyType,
@@ -185,22 +185,23 @@ export async function getProperty(id: string): Promise<PropertyDetail | null> {
     description:  p.description ?? null,
     lat:          p.lat,
     lng:          p.lng,
-    beds:         p.bedrooms,   // ← schema: "bedrooms" → type: "beds"
-    baths:        p.bathrooms,  // ← schema: "bathrooms" → type: "baths"
+    beds:         p.bedrooms,
+    baths:        p.bathrooms,
     halls:        p.halls,
     price:        p.price,
     pricePeriod:  p.pricePeriod,
     amenities:    (p.amenities as string[]) ?? [],
     photos,
-    images:       photos,       // ← both photos and images point to p.images
+    images:       photos,
     availableDays:  viewingDays,
     availableFrom:  "08:00",
     availableTo:    "18:00",
     viewingDays,
     viewingTime,
-    ...agentFields(a),          // ← agentName, agentPhone, agentWhatsApp from agents table
+    ...agentFields(a),
     views:        p.views,
     isCompound:   p.isCompound,
+    isVisible:    p.isVisible,   // ← ADD THIS LINE
     units,
     scenes,
     createdAt:    p.createdAt.toISOString(),

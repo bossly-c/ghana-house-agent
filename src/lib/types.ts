@@ -1,6 +1,6 @@
 export type ListingType = "rent" | "sale";
 
-type PropertyUnit = {
+export type PropertyUnit = {
   id:          string;
   propertyId:  string;
   unitType:    string;

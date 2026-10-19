@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { agents, properties, propertyUnits } from "@/db/schema";
 import { eq, desc, ilike, and, inArray } from "drizzle-orm";
+import type { PropertyUnit } from "@/lib/types"; 
 
 // ── GET /api/properties ────────────────────────────────────────────────────
 export async function GET(req: NextRequest) {
