@@ -12,13 +12,20 @@ import AuthModal from "@/components/AuthModal";
 import NavigationPage from "@/components/NavigationPage";
 import type { PropertyListItem, PropertyFilters } from "@/lib/types";
 import { distanceMetres } from "@/lib/geo";
-import { SlidersHorizontal, Plus } from "lucide-react";
+import { SlidersHorizontal, Plus, Search, X } from "lucide-react";
 import Link from "next/link";
 import { useBackButton } from "@/hooks/useBackButton";
 
 const MapView = dynamic(() => import("@/components/MapView"), { ssr: false });
 
 interface Props { initial?: PropertyListItem[] }
+
+interface NominatimResult {
+  place_id:     number;
+  display_name: string;
+  lat:          string;
+  lon:          string;
+}
 
 /* ══════════════════════════════════════════════════
    Splash
@@ -93,12 +100,20 @@ function AppShell({ initial }: Props) {
   const [tab,          setTab]          = useState<Tab>("map");
   const [filters,      setFilters]      = useState<PropertyFilters>({});
   const [locateSignal, setLocateSignal] = useState(0);
+  const [flyToSignal,  setFlyToSignal]  = useState<{ lat: number; lng: number; zoom?: number } | null>(null);
   const [userPos,      setUserPos]      = useState<{ lat: number; lng: number } | null>(null);
   const [navigatingTo, setNavigatingTo] = useState<{ name: string; lat: number; lng: number } | null>(null);
 
+  /* ── Search state ── */
+  const [searchOpen,    setSearchOpen]    = useState(false);
+  const [searchQuery,   setSearchQuery]   = useState("");
+  const [searchResults, setSearchResults] = useState<NominatimResult[]>([]);
+  const [searching,     setSearching]     = useState(false);
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const notifiedRef = useRef<Set<string>>(new Set());
 
-  /* ── Fetch properties (initial + polling every 30s) ── */
+  /* ── Fetch properties ── */
   const fetchProps = useCallback(async () => {
     const params = new URLSearchParams();
     if (filters.listing) params.set("listing", filters.listing);
@@ -118,12 +133,40 @@ function AppShell({ initial }: Props) {
     return () => clearInterval(interval);
   }, [fetchProps]);
 
+  /* ── Nominatim search (debounced 500ms) ── */
+  useEffect(() => {
+    if (!searchQuery.trim()) { setSearchResults([]); return; }
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery + " Ghana")}&limit=6&countrycodes=gh`;
+        const res  = await fetch(url, { headers: { "Accept-Language": "en" } });
+        const data: NominatimResult[] = await res.json();
+        setSearchResults(data);
+      } catch {
+        setSearchResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 500);
+    return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current); };
+  }, [searchQuery]);
+
+  /* ── Close search when a house is selected ── */
+  useEffect(() => {
+    if (selectedId) {
+      setSearchOpen(false);
+      setSearchQuery("");
+      setSearchResults([]);
+    }
+  }, [selectedId]);
+
   /* ── Geofence notifications ── */
   const handleUserLocation = useCallback(async (lat: number, lng: number) => {
     setUserPos({ lat, lng });
     if (typeof window === "undefined") return;
     if (localStorage.getItem("gha_notif") !== "true") return;
-
     const { LocalNotifications } = await import("@capacitor/local-notifications");
     for (const p of properties) {
       if (p.lat === null || p.lng === null) continue;
@@ -150,15 +193,37 @@ function AppShell({ initial }: Props) {
     setNavigatingTo(dest);
   }, []);
 
+  function pickSearchResult(r: NominatimResult) {
+    setFlyToSignal({ lat: parseFloat(r.lat), lng: parseFloat(r.lon), zoom: 14 });
+    setSearchQuery(r.display_name.split(",")[0]);
+    setSearchResults([]);
+    setSearchOpen(false);
+  }
+
+  function closeSearch() {
+    setSearchOpen(false);
+    setSearchQuery("");
+    setSearchResults([]);
+  }
+
   /* ══════════════════════════════════════════════════
-     Back button — priority stack
-     30 = navigation page (highest)
+     Back button priority stack
+     40 = search overlay open
+     30 = navigation page
      20 = property sheet
-     10 = non-map tab
-     0  = map root → double-tap exits (handled by hook system itself)
+     10 = non-map tab → go to map
+      0 = map root → double-tap exits (handled by hook system)
   ══════════════════════════════════════════════════ */
 
-  // Priority 30 — Navigation overlay
+  // Priority 40 — Search overlay
+  useBackButton(
+    searchOpen,
+    useCallback(() => closeSearch(), []),
+    "search-overlay",
+    40
+  );
+
+  // Priority 30 — Navigation page
   useBackButton(
     !!navigatingTo,
     useCallback(() => setNavigatingTo(null), []),
@@ -174,9 +239,9 @@ function AppShell({ initial }: Props) {
     20
   );
 
-  // Priority 10 — Non-map tab → return to map
+  // Priority 10 — Non-map tab → return to map first
   useBackButton(
-    tab !== "map" && !selectedId && !navigatingTo,
+    tab !== "map" && !selectedId && !navigatingTo && !searchOpen,
     useCallback(() => setTab("map"), []),
     "tab-switch",
     10
@@ -193,12 +258,15 @@ function AppShell({ initial }: Props) {
     );
   }
 
+  /* ── Whether we are "inside" a house (sheet open) ── */
+  const sheetOpen = !!selectedId;
+
   return (
     <div className="fixed inset-0 flex flex-col bg-zinc-100 dark:bg-zinc-950">
 
       {/* ── App name header ── */}
       <header
-        className="flex-none bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 flex items-center px-4"
+        className="flex-none bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 flex items-center gap-2 px-4"
         style={{ paddingTop: "calc(env(safe-area-inset-top) + 12px)", paddingBottom: "12px", zIndex: 999 }}
       >
         <h1
@@ -207,6 +275,17 @@ function AppShell({ initial }: Props) {
         >
           Ghana House Agent
         </h1>
+
+        {/* Search button — only on map tab AND only when no sheet is open */}
+        {tab === "map" && !sheetOpen && (
+          <button
+            onClick={() => setSearchOpen(o => !o)}
+            className="w-10 h-10 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center"
+            aria-label="Search location"
+          >
+            <Search size={17} className="text-zinc-600 dark:text-zinc-300" />
+          </button>
+        )}
       </header>
 
       {/* ── Content area ── */}
@@ -217,24 +296,74 @@ function AppShell({ initial }: Props) {
           className={`absolute inset-0 ${tab === "map" ? "block" : "hidden"}`}
           style={{ paddingBottom: "calc(60px + env(safe-area-inset-bottom))" }}
         >
-                    <MapView
+          <MapView
             properties={properties}
             selectedId={selectedId}
             onSelect={id => setSelectedId(id)}
             onUserLocation={handleUserLocation}
             locateSignal={locateSignal}
-            hideControls={!!selectedId}
+            flyToSignal={flyToSignal}
+            hideControls={sheetOpen}
           />
 
-          {/* Filter chips — hidden when sheet is open so they don't clash */}
-          {!selectedId && (
+          {/* Search overlay — hidden when sheet is open */}
+          {searchOpen && !sheetOpen && (
+            <div className="absolute top-2 left-2 right-2 z-[600]">
+              <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl overflow-hidden border border-zinc-200 dark:border-zinc-700">
+                <div className="flex items-center gap-2 px-3 py-2">
+                  <Search size={16} className="text-zinc-400 flex-none" />
+                  <input
+                    autoFocus
+                    type="text"
+                    placeholder="Search any place in Ghana…"
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                    className="flex-1 bg-transparent text-sm outline-none text-zinc-800 dark:text-zinc-100 placeholder:text-zinc-400"
+                  />
+                  {searching && (
+                    <span className="text-xs text-zinc-400 flex-none">Searching…</span>
+                  )}
+                  <button onClick={closeSearch}>
+                    <X size={16} className="text-zinc-400" />
+                  </button>
+                </div>
+
+                {searchResults.length > 0 && (
+                  <ul className="border-t border-zinc-100 dark:border-zinc-800 max-h-64 overflow-y-auto">
+                    {searchResults.map(r => (
+                      <li key={r.place_id}>
+                        <button
+                          onClick={() => pickSearchResult(r)}
+                          className="w-full text-left px-4 py-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800 border-b border-zinc-50 dark:border-zinc-800 last:border-0"
+                        >
+                          <span className="font-medium text-zinc-800 dark:text-zinc-100 block truncate">
+                            {r.display_name.split(",")[0]}
+                          </span>
+                          <span className="text-xs text-zinc-400 truncate block">
+                            {r.display_name.split(",").slice(1, 3).join(",")}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                {searchQuery.trim() && !searching && searchResults.length === 0 && (
+                  <p className="px-4 py-3 text-sm text-zinc-400">No places found in Ghana</p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Filter chips — hidden when sheet or search is open */}
+          {!sheetOpen && !searchOpen && (
             <div className="absolute top-3 left-3 right-3 z-[500]">
               <FilterBar filters={filters} onChange={setFilters} />
             </div>
           )}
 
           {/* List Property FAB — hidden when sheet is open */}
-          {!selectedId && (
+          {!sheetOpen && (
             <div
               className="absolute left-3 right-3 z-[500] flex justify-end"
               style={{ bottom: "calc(68px + env(safe-area-inset-bottom))" }}
