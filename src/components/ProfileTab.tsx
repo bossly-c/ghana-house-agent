@@ -20,19 +20,26 @@ export default function ProfileTab({ onRefresh, section, onSectionChange }: Prof
       ? localStorage.getItem("gha_token") ?? ""
       : "";
 
+  // ─── Not logged in ────────────────────────────────────────────────
   if (!user) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center gap-6 px-8 text-center">
+      <div
+        className="flex-1 flex flex-col items-center justify-center gap-6 px-8 text-center"
+        style={{ background: "var(--bg)", minHeight: "100%" }}
+      >
         <div
           className="w-24 h-24 rounded-full flex items-center justify-center"
-          style={{ background: "#0c3b2e20" }}
+          style={{ background: "var(--surface)", border: "2px solid var(--border-col)" }}
         >
-          <User size={44} style={{ color: "#0c3b2e" }} />
+          <User size={44} style={{ color: "var(--text-muted)" }} />
         </div>
         <div>
           <h2
             className="font-display text-2xl font-bold"
-            style={{ color: "var(--text-main)", fontFamily: "var(--font-fraunces, Georgia, serif)" }}
+            style={{
+              color:      "var(--text-main)",
+              fontFamily: "var(--font-fraunces, Georgia, serif)",
+            }}
           >
             Ghana House Agent
           </h2>
@@ -53,8 +60,12 @@ export default function ProfileTab({ onRefresh, section, onSectionChange }: Prof
     );
   }
 
+  // ─── Logged in ────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col" style={{ minHeight: "100%" }}>
+    <div
+      className="flex flex-col"
+      style={{ minHeight: "100%", background: "var(--bg)" }}   /* ← KEY FIX */
+    >
       {/* Avatar + name */}
       <div className="flex flex-col items-center gap-2 pt-7 pb-4 px-5">
         {user.avatar ? (
@@ -83,7 +94,10 @@ export default function ProfileTab({ onRefresh, section, onSectionChange }: Prof
         )}
         <h2
           className="text-xl font-bold"
-          style={{ color: "var(--text-main)", fontFamily: "var(--font-fraunces, Georgia, serif)" }}
+          style={{
+            color:      "var(--text-main)",
+            fontFamily: "var(--font-fraunces, Georgia, serif)",
+          }}
         >
           {user.name}
         </h2>
@@ -95,9 +109,12 @@ export default function ProfileTab({ onRefresh, section, onSectionChange }: Prof
       {/* Segment control */}
       <div
         className="flex mx-5 mb-4 rounded-2xl overflow-hidden border"
-        style={{ borderColor: "var(--border-col)", background: "var(--surface-2)" }}
+        style={{
+          borderColor: "var(--border-col)",
+          background:  "var(--surface-2)",
+        }}
       >
-        {(["info", "listings"] as const).map(s => (
+        {(["info", "listings"] as const).map((s) => (
           <button
             key={s}
             type="button"
@@ -105,7 +122,7 @@ export default function ProfileTab({ onRefresh, section, onSectionChange }: Prof
             className="flex-1 py-2.5 text-xs font-extrabold uppercase tracking-wide transition"
             style={{
               background:   section === s ? "#0c3b2e" : "transparent",
-              color:        section === s ? "#f2b70a"  : "var(--text-muted)",
+              color:        section === s ? "#f2b70a" : "var(--text-muted)",
               borderRadius: "0.875rem",
             }}
           >
@@ -115,7 +132,7 @@ export default function ProfileTab({ onRefresh, section, onSectionChange }: Prof
       </div>
 
       {/* Scrollable content */}
-      <div className="flex-1 px-5 pb-10">
+      <div className="flex-1 px-5 pb-10 overflow-y-auto thin-scroll">
         {section === "info" && (
           <div className="space-y-3">
             {[
@@ -126,7 +143,10 @@ export default function ProfileTab({ onRefresh, section, onSectionChange }: Prof
               <div
                 key={label}
                 className="rounded-2xl px-5 py-4 flex justify-between items-center"
-                style={{ background: "var(--surface)", border: "1px solid var(--border-col)" }}
+                style={{
+                  background: "var(--surface)",
+                  border:     "1px solid var(--border-col)",
+                }}
               >
                 <span
                   className="text-xs font-extrabold uppercase tracking-wider"
@@ -144,7 +164,7 @@ export default function ProfileTab({ onRefresh, section, onSectionChange }: Prof
               onClick={logout}
               type="button"
               className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl font-extrabold text-sm mt-2"
-              style={{ background: "#fee2e2", color: "#dc2626" }}
+              style={{ background: "#fee2e220", color: "#dc2626", border: "1px solid #dc262630" }}
             >
               <LogOut size={18} /> Log Out
             </button>

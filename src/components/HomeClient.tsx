@@ -32,16 +32,25 @@ function Splash() {
     <div
       className="fixed inset-0 flex flex-col items-center justify-center z-[9999]"
       style={{
-        background:    "var(--bg, white)",
+        background:    "var(--bg)",
         paddingTop:    "env(safe-area-inset-top)",
         paddingBottom: "env(safe-area-inset-bottom)",
       }}
     >
       <div className="text-5xl mb-4">🏠</div>
-      <h1 style={{ fontFamily: "var(--font-fraunces, Georgia, serif)", fontWeight: 700, fontSize: "1.8rem", color: "#059669" }}>
+      <h1
+        style={{
+          fontFamily: "var(--font-fraunces, Georgia, serif)",
+          fontWeight: 700,
+          fontSize:   "1.8rem",
+          color:      "#059669",
+        }}
+      >
         Ghana House Agent
       </h1>
-      <p className="text-zinc-400 text-sm mt-2">Loading…</p>
+      <p style={{ color: "var(--text-muted)", fontSize: "0.875rem", marginTop: "0.5rem" }}>
+        Loading…
+      </p>
     </div>
   );
 }
@@ -55,20 +64,30 @@ function AuthGate() {
     <div
       className="fixed inset-0 flex flex-col items-center justify-center z-[9999] px-8 gap-6"
       style={{
-        background:    "var(--bg, white)",
+        background:    "var(--bg)",
         paddingTop:    "env(safe-area-inset-top)",
         paddingBottom: "env(safe-area-inset-bottom)",
       }}
     >
       <div className="text-center">
-        <h1 style={{ fontFamily: "var(--font-fraunces, Georgia, serif)", fontWeight: 700, fontSize: "2.2rem", color: "#059669", lineHeight: 1.1 }}>
+        <h1
+          style={{
+            fontFamily: "var(--font-fraunces, Georgia, serif)",
+            fontWeight: 700,
+            fontSize:   "2.2rem",
+            color:      "#059669",
+            lineHeight: 1.1,
+          }}
+        >
           Ghana House Agent
         </h1>
         <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>
           Find &amp; list properties across Ghana
         </p>
       </div>
-      <div className="w-28 h-28 rounded-3xl bg-emerald-50 dark:bg-emerald-900/30 flex items-center justify-center text-6xl shadow-inner">
+      <div className="w-28 h-28 rounded-3xl flex items-center justify-center text-6xl shadow-inner"
+        style={{ background: "var(--surface-2)" }}
+      >
         🏠
       </div>
       <p className="text-sm text-center leading-relaxed" style={{ color: "var(--text-muted)" }}>
@@ -76,8 +95,8 @@ function AuthGate() {
       </p>
       <button
         onClick={() => setShowAuth(true)}
-        className="w-full max-w-xs text-white font-semibold py-4 rounded-2xl text-base shadow-lg"
-        style={{ background: "#059669" }}
+        className="w-full max-w-xs font-semibold py-4 rounded-2xl text-base shadow-lg"
+        style={{ background: "#059669", color: "#fff" }}
       >
         Sign In / Create Account
       </button>
@@ -87,7 +106,7 @@ function AuthGate() {
 }
 
 /* ══════════════════════════════════════
-   Main export
+   Main export — THIS IS THE DEFAULT EXPORT
 ══════════════════════════════════════ */
 export default function HomeClient({ initial }: Props) {
   const { user, loading } = useAuth();
@@ -97,7 +116,7 @@ export default function HomeClient({ initial }: Props) {
 }
 
 /* ══════════════════════════════════════
-   App shell
+   App shell — internal, not exported
 ══════════════════════════════════════ */
 function AppShell({ initial }: Props) {
   const [properties,   setProperties]   = useState<PropertyListItem[]>(initial ?? []);
@@ -110,13 +129,13 @@ function AppShell({ initial }: Props) {
   const [navigatingTo, setNavigatingTo] = useState<{ name: string; lat: number; lng: number } | null>(null);
 
   /* ── Search state ── */
-  const [searchOpen,        setSearchOpen]        = useState(false);   // compact overlay
-  const [paramSearchOpen,   setParamSearchOpen]   = useState(false);   // full-screen form
+  const [searchOpen,        setSearchOpen]        = useState(false);
+  const [paramSearchOpen,   setParamSearchOpen]   = useState(false);
   const [searchResults,     setSearchResults]     = useState<PropertyListItem[] | null>(null);
-  const [searchResultsOpen, setSearchResultsOpen] = useState(false);   // full-screen results
+  const [searchResultsOpen, setSearchResultsOpen] = useState(false);
   const [lastParams,        setLastParams]        = useState<PropertySearchParams>({});
 
-  /* Profile tab sub-section — lifted for back-button control */
+  /* Profile sub-section lifted for back-button control */
   const [profileSection, setProfileSection] = useState<"info" | "listings">("info");
 
   const notifiedRef = useRef<Set<string>>(new Set());
@@ -144,15 +163,13 @@ function AppShell({ initial }: Props) {
   /* ── Parameter search → fetch results ── */
   const handleDatabaseSearch = useCallback(async (params: PropertySearchParams) => {
     setLastParams(params);
-    setParamSearchOpen(false); // close the form page
-
+    setParamSearchOpen(false);
     const qs = new URLSearchParams();
     if (params.area)     qs.set("area",     params.area);
     if (params.type)     qs.set("type",     params.type ?? "");
     if (params.listing)  qs.set("listing",  params.listing);
     if (params.minPrice) qs.set("minPrice", params.minPrice);
     if (params.maxPrice) qs.set("maxPrice", params.maxPrice);
-
     try {
       const r = await fetch(`/api/properties?${qs}`);
       const d = await r.json();
@@ -176,18 +193,24 @@ function AppShell({ initial }: Props) {
     setUserPos({ lat, lng });
     if (typeof window === "undefined") return;
     if (localStorage.getItem("gha_notif") !== "true") return;
-    const { LocalNotifications } = await import("@capacitor/local-notifications");
-    for (const p of properties) {
-      if (p.lat == null || p.lng == null) continue;
-      const sid = String(p.id);
-      if (notifiedRef.current.has(sid)) continue;
-      if (distanceMetres(lat, lng, p.lat, p.lng) <= 300) {
-        notifiedRef.current.add(sid);
-        await LocalNotifications.schedule({
-          notifications: [{ id: Number(p.id), title: "Nearby Property 🏠", body: `${p.title} is within 300 m of you!` }],
-        });
+    try {
+      const { LocalNotifications } = await import("@capacitor/local-notifications");
+      for (const p of properties) {
+        if (p.lat == null || p.lng == null) continue;
+        const sid = String(p.id);
+        if (notifiedRef.current.has(sid)) continue;
+        if (distanceMetres(lat, lng, p.lat, p.lng) <= 300) {
+          notifiedRef.current.add(sid);
+          await LocalNotifications.schedule({
+            notifications: [{
+              id:    Number(p.id),
+              title: "Nearby Property 🏠",
+              body:  `${p.title} is within 300 m of you!`,
+            }],
+          });
+        }
       }
-    }
+    } catch { /* browser — ignore */ }
   }, [properties]);
 
   const selected = properties.find(p => String(p.id) === selectedId) ?? null;
@@ -197,68 +220,61 @@ function AppShell({ initial }: Props) {
     setNavigatingTo(dest);
   }, []);
 
-  /* ── Close search overlay when a house is tapped on the map ── */
+  /* ── Close search overlays when a pin is tapped ── */
   useEffect(() => {
     if (selectedId) { setSearchOpen(false); setParamSearchOpen(false); }
   }, [selectedId]);
 
   /* ══════════════════════════════════════════════════
-     Back button priority stack
+     Back-button callbacks — named & hoisted so they
+     are stable references passed to useBackButton
+  ══════════════════════════════════════════════════ */
+  const cbCloseResults     = useCallback(() => setSearchResultsOpen(false), []);
+  const cbCloseParamSearch = useCallback(() => setParamSearchOpen(false),   []);
+  const cbCloseSearch      = useCallback(() => setSearchOpen(false),        []);
+  const cbCloseNav         = useCallback(() => setNavigatingTo(null),       []);
+  const cbCloseSheet       = useCallback(() => setSelectedId(null),         []);
+  const cbProfileToInfo    = useCallback(() => setProfileSection("info"),   []);
+  const cbGoToMap          = useCallback(() => setTab("map"),               []);
+
+  /* ══════════════════════════════════════════════════
+     Back-button priority stack
      70 – search results page
      60 – parameter search form
      50 – compact search overlay
      40 – navigation page
      30 – property sheet
-     21 – profile → listings sub-section
-     20 – non-map tab → map
+     21 – profile listings → profile info
+     20 – any non-map tab → map
       0 – map root → double-tap exit
   ══════════════════════════════════════════════════ */
+  useBackButton(searchResultsOpen, cbCloseResults,     "search-results",  70);
+  useBackButton(paramSearchOpen,   cbCloseParamSearch, "param-search",    60);
+  useBackButton(searchOpen,        cbCloseSearch,      "search-overlay",  50);
+  useBackButton(!!navigatingTo,    cbCloseNav,         "navigation-page", 40);
+  useBackButton(!!selectedId,      cbCloseSheet,       "property-sheet",  30);
 
   useBackButton(
-    searchResultsOpen,
-    useCallback(() => setSearchResultsOpen(false), []),
-    "search-results", 70
+    tab === "profile" &&
+      profileSection === "listings" &&
+      !selectedId && !navigatingTo &&
+      !searchOpen && !paramSearchOpen && !searchResultsOpen,
+    cbProfileToInfo,
+    "profile-listings",
+    21,
   );
 
   useBackButton(
-    paramSearchOpen,
-    useCallback(() => setParamSearchOpen(false), []),
-    "param-search", 60
-  );
-
-  useBackButton(
-    searchOpen,
-    useCallback(() => setSearchOpen(false), []),
-    "search-overlay", 50
-  );
-
-  useBackButton(
-    !!navigatingTo,
-    useCallback(() => setNavigatingTo(null), []),
-    "navigation-page", 40
-  );
-
-  useBackButton(
-    !!selectedId,
-    useCallback(() => setSelectedId(null), []),
-    "property-sheet", 30
-  );
-
-  useBackButton(
-    tab === "profile" && profileSection === "listings" &&
-      !selectedId && !navigatingTo && !searchOpen && !paramSearchOpen && !searchResultsOpen,
-    useCallback(() => setProfileSection("info"), []),
-    "profile-listings", 21
-  );
-
-  useBackButton(
-    tab !== "map" && !selectedId && !navigatingTo && !searchOpen && !paramSearchOpen && !searchResultsOpen &&
+    tab !== "map" &&
+      !selectedId && !navigatingTo &&
+      !searchOpen && !paramSearchOpen && !searchResultsOpen &&
       !(tab === "profile" && profileSection === "listings"),
-    useCallback(() => setTab("map"), []),
-    "tab-switch", 20
+    cbGoToMap,
+    "tab-switch",
+    20,
   );
 
-  /* ── Navigation full-screen ── */
+  /* ── Navigation full-screen overlay ── */
   if (navigatingTo) {
     return (
       <NavigationPage
@@ -271,33 +287,43 @@ function AppShell({ initial }: Props) {
 
   const sheetOpen = !!selectedId;
 
+  /* ══════════════════════════════════════════════════
+     Render
+  ══════════════════════════════════════════════════ */
   return (
-    <div className="fixed inset-0 flex flex-col" style={{ background: "var(--bg, #f4f4f5)" }}>
-
-      {/* Header */}
+    <div
+      className="fixed inset-0 flex flex-col"
+      style={{ background: "var(--bg)" }}
+    >
+      {/* ── Header ───────────────────────────────────── */}
       <header
         className="flex-none flex items-center gap-2 px-4"
         style={{
           paddingTop:    "calc(env(safe-area-inset-top) + 12px)",
           paddingBottom: "12px",
-          background:    "var(--surface, white)",
-          borderBottom:  "1px solid var(--border-col, #e4e4e7)",
+          background:    "var(--surface)",
+          borderBottom:  "1px solid var(--border-col)",
           zIndex:        999,
         }}
       >
         <h1
           className="flex-1 tracking-tight"
-          style={{ fontFamily: "var(--font-fraunces, Georgia, serif)", fontWeight: 700, fontSize: "1.25rem", color: "#059669" }}
+          style={{
+            fontFamily: "var(--font-fraunces, Georgia, serif)",
+            fontWeight: 700,
+            fontSize:   "1.25rem",
+            color:      "#059669",
+          }}
         >
           Ghana House Agent
         </h1>
 
-        {/* Search button — map tab only, no sheet */}
+        {/* Search button — map tab only, no open sheet */}
         {tab === "map" && !sheetOpen && (
           <button
             onClick={() => setSearchOpen(o => !o)}
             className="w-10 h-10 rounded-full flex items-center justify-center"
-            style={{ background: "var(--surface-2, #f4f4f5)" }}
+            style={{ background: "var(--surface-2)" }}
             aria-label="Search"
           >
             <Search size={17} style={{ color: "var(--text-muted)" }} />
@@ -305,7 +331,7 @@ function AppShell({ initial }: Props) {
         )}
       </header>
 
-      {/* Content */}
+      {/* ── Content area ─────────────────────────────── */}
       <main className="flex-1 relative overflow-hidden">
 
         {/* MAP TAB */}
@@ -314,14 +340,14 @@ function AppShell({ initial }: Props) {
           style={{ paddingBottom: "calc(60px + env(safe-area-inset-bottom))" }}
         >
           <MapView
-            properties={properties}
-            selectedId={selectedId}
-            onSelect={id => setSelectedId(id)}
-            onUserLocation={handleUserLocation}
-            locateSignal={locateSignal}
-            flyToSignal={flyToSignal}
-            hideControls={sheetOpen}
-          />
+  properties={properties}
+  selectedId={selectedId}
+  onSelect={id => setSelectedId(id)}
+  onUserLocation={handleUserLocation}
+  locateSignal={locateSignal}
+  flyToSignal={flyToSignal}
+  hideControls={sheetOpen || paramSearchOpen || searchResultsOpen}
+/>
 
           {/* Compact search overlay */}
           {searchOpen && !sheetOpen && (
@@ -332,8 +358,8 @@ function AppShell({ initial }: Props) {
                 setSearchOpen(false);
               }}
               onOpenParamSearch={() => {
-                setSearchOpen(false);      // close compact overlay first
-                setParamSearchOpen(true);  // open full-screen form
+                setSearchOpen(false);
+                setParamSearchOpen(true);
               }}
             />
           )}
@@ -353,8 +379,8 @@ function AppShell({ initial }: Props) {
             >
               <Link
                 href="/list"
-                className="flex items-center gap-2 text-white font-semibold px-5 py-3 rounded-2xl shadow-xl"
-                style={{ background: "#059669" }}
+                className="flex items-center gap-2 font-semibold px-5 py-3 rounded-2xl shadow-xl"
+                style={{ background: "#059669", color: "#fff" }}
               >
                 <Plus size={18} />
                 <span className="text-sm">List Property</span>
@@ -365,28 +391,57 @@ function AppShell({ initial }: Props) {
 
         {/* FAVOURITES TAB */}
         {tab === "favourites" && (
-          <div className="absolute inset-0 overflow-y-auto" style={{ paddingBottom: "calc(60px + env(safe-area-inset-bottom))" }}>
-            <FavouritesTab onSelect={id => { setSelectedId(String(id)); setTab("map"); }} />
+          <div
+            className="absolute inset-0 overflow-y-auto thin-scroll"
+            style={{
+              paddingBottom: "calc(60px + env(safe-area-inset-bottom))",
+              background:    "var(--bg)",
+            }}
+          >
+            <FavouritesTab
+              onSelect={id => { setSelectedId(String(id)); setTab("map"); }}
+            />
           </div>
         )}
 
         {/* PROFILE TAB */}
         {tab === "profile" && (
-          <div className="absolute inset-0 overflow-y-auto" style={{ paddingBottom: "calc(60px + env(safe-area-inset-bottom))" }}>
-            <ProfileTab onRefresh={fetchProps} section={profileSection} onSectionChange={setProfileSection} />
+          <div
+            className="absolute inset-0 overflow-y-auto thin-scroll"
+            style={{
+              paddingBottom: "calc(60px + env(safe-area-inset-bottom))",
+              background:    "var(--bg)",
+            }}
+          >
+            <ProfileTab
+              onRefresh={fetchProps}
+              section={profileSection}
+              onSectionChange={setProfileSection}
+            />
           </div>
         )}
 
         {/* SETTINGS TAB */}
         {tab === "settings" && (
-          <div className="absolute inset-0 overflow-y-auto" style={{ paddingBottom: "calc(60px + env(safe-area-inset-bottom))" }}>
+          <div
+            className="absolute inset-0 overflow-y-auto thin-scroll"
+            style={{
+              paddingBottom: "calc(60px + env(safe-area-inset-bottom))",
+              background:    "var(--bg)",
+            }}
+          >
             <SettingsTab />
           </div>
         )}
       </main>
 
-      <TabBar active={tab} onChange={t => { setTab(t); setProfileSection("info"); }} />
+      {/* ── Tab bar ──────────────────────────────────── */}
+      <TabBar
+        active={tab}
+        onChange={t => { setTab(t); setProfileSection("info"); }}
+      />
 
+      {/* ── Property sheet ───────────────────────────── */}
       {selected && (
         <PropertySheet
           property={selected}
@@ -395,7 +450,7 @@ function AppShell({ initial }: Props) {
         />
       )}
 
-      {/* Full-screen parameter search form — rendered outside main so it covers everything */}
+      {/* ── Full-screen parameter search ─────────────── */}
       {paramSearchOpen && (
         <ParameterSearchPage
           onBack={() => setParamSearchOpen(false)}
@@ -403,7 +458,7 @@ function AppShell({ initial }: Props) {
         />
       )}
 
-      {/* Full-screen search results — rendered on top of everything */}
+      {/* ── Full-screen search results ───────────────── */}
       {searchResultsOpen && searchResults !== null && (
         <SearchResultsPage
           params={lastParams}
@@ -416,24 +471,34 @@ function AppShell({ initial }: Props) {
   );
 }
 
-/* ── Filter bar ── */
-function FilterBar({ filters, onChange }: { filters: PropertyFilters; onChange: (f: PropertyFilters) => void }) {
+/* ── Filter bar ────────────────────────────────────── */
+function FilterBar({
+  filters,
+  onChange,
+}: {
+  filters:  PropertyFilters;
+  onChange: (f: PropertyFilters) => void;
+}) {
   return (
     <div className="flex gap-2 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
       <button
         className="flex-none flex items-center gap-1 px-3 py-1.5 rounded-full shadow text-xs font-medium"
-        style={{ background: "var(--surface, white)", color: "var(--text-muted)" }}
+        style={{ background: "var(--surface)", color: "var(--text-muted)" }}
+        type="button"
       >
         <SlidersHorizontal size={13} /> Filter
       </button>
       {(["rent", "sale"] as const).map(l => (
         <button
           key={l}
-          onClick={() => onChange({ ...filters, listing: filters.listing === l ? undefined : l })}
+          type="button"
+          onClick={() =>
+            onChange({ ...filters, listing: filters.listing === l ? undefined : l })
+          }
           className="flex-none px-3 py-1.5 rounded-full shadow text-xs font-medium capitalize transition-colors"
           style={{
-            background: filters.listing === l ? "#059669" : "var(--surface, white)",
-            color:      filters.listing === l ? "white"    : "var(--text-muted)",
+            background: filters.listing === l ? "#059669"          : "var(--surface)",
+            color:      filters.listing === l ? "#fff"             : "var(--text-muted)",
           }}
         >
           {l === "rent" ? "🔴 Rent" : "🟢 Sale"}

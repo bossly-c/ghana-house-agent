@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Bell, BellOff, Sun, Moon, Monitor, MessageCircle, ChevronRight } from "lucide-react";
+import { Bell, BellOff, Sun, Moon, Monitor, MessageCircle } from "lucide-react";
 import { useTheme, type AppTheme } from "@/context/ThemeContext";
 
 export default function SettingsTab() {
@@ -14,7 +14,6 @@ export default function SettingsTab() {
   const toggleNotif = async () => {
     if (!notifEnabled) {
       try {
-        // Try Capacitor local notifications permission
         const { LocalNotifications } = await import("@capacitor/local-notifications");
         const perm = await LocalNotifications.requestPermissions();
         if (perm.display !== "granted") return;
@@ -28,35 +27,54 @@ export default function SettingsTab() {
   };
 
   const openSupport = () => {
-    const msg = encodeURIComponent(
-      "Hello, I need support with Ghana House Agent."
-    );
+    const msg = encodeURIComponent("Hello, I need support with Ghana House Agent.");
     window.open(`https://wa.me/233247659532?text=${msg}`, "_blank");
   };
 
   const themeOpts: { value: AppTheme; label: string; icon: typeof Sun }[] = [
-    { value: "light",  label: "Light",       icon: Sun     },
-    { value: "dark",   label: "Dark",        icon: Moon    },
-    { value: "system", label: "Follow system", icon: Monitor },
+    { value: "light",  label: "Light",          icon: Sun     },
+    { value: "dark",   label: "Dark",           icon: Moon    },
+    { value: "system", label: "Follow system",  icon: Monitor },
   ];
 
-  const cardStyle = {
+  const card: React.CSSProperties = {
     background: "var(--surface)",
     border:     "1px solid var(--border-col)",
+    borderRadius: "1rem",
+    overflow:   "hidden",
+    marginBottom: "1.25rem",
+  };
+
+  const sectionLabel: React.CSSProperties = {
+    fontSize:      "11px",
+    fontWeight:    800,
+    textTransform: "uppercase",
+    letterSpacing: "0.1em",
+    color:         "var(--text-muted)",
+    padding:       "0 4px",
+    marginBottom:  "8px",
+    display:       "block",
   };
 
   return (
-    <div className="flex-1 overflow-y-auto thin-scroll px-4 pb-10">
+    // ← KEY FIX: var(--bg) as root background
+    <div
+      className="flex-1 overflow-y-auto thin-scroll px-4 pb-10"
+      style={{ background: "var(--bg)", minHeight: "100%" }}
+    >
       <h1
-        className="font-display text-2xl font-bold mb-6 px-1"
-        style={{ color: "var(--text-main)" }}
+        className="font-display text-2xl font-bold mb-6 px-1 pt-2"
+        style={{
+          color:      "var(--text-main)",
+          fontFamily: "var(--font-fraunces, Georgia, serif)",
+        }}
       >
         Settings
       </h1>
 
-      {/* ── Notifications ─────────────────────────── */}
-      <p className="section-label">Notifications</p>
-      <div className="rounded-2xl overflow-hidden mb-5" style={cardStyle}>
+      {/* ── Notifications ────────────────────────── */}
+      <span style={sectionLabel}>Notifications</span>
+      <div style={card}>
         <div className="flex items-center justify-between px-5 py-4">
           <div className="flex items-center gap-3">
             {notifEnabled
@@ -72,7 +90,6 @@ export default function SettingsTab() {
               </p>
             </div>
           </div>
-          {/* Toggle */}
           <button
             onClick={toggleNotif}
             type="button"
@@ -82,26 +99,30 @@ export default function SettingsTab() {
             <span
               className="absolute top-0.5 w-5 h-5 rounded-full shadow transition-all duration-200"
               style={{
-                background: notifEnabled ? "#f2b70a" : "var(--text-muted)",
-                left:       notifEnabled ? "26px" : "2px",
+                background: notifEnabled ? "#f2b70a" : "var(--surface-2)",
+                left:       notifEnabled ? "26px"    : "2px",
               }}
             />
           </button>
         </div>
       </div>
 
-      {/* ── Appearance ────────────────────────────── */}
-      <p className="section-label">Appearance</p>
-      <div className="rounded-2xl overflow-hidden mb-5" style={cardStyle}>
+      {/* ── Appearance ───────────────────────────── */}
+      <span style={sectionLabel}>Appearance</span>
+      <div style={card}>
         {themeOpts.map(({ value, label, icon: Icon }, i) => (
           <button
             key={value}
             onClick={() => setTheme(value)}
             type="button"
-            className="w-full flex items-center justify-between px-5 py-4 text-left"
+            className="w-full flex items-center justify-between px-5 py-4 text-left transition"
             style={{
               borderBottom:
-                i < themeOpts.length - 1 ? "1px solid var(--border-col)" : undefined,
+                i < themeOpts.length - 1
+                  ? "1px solid var(--border-col)"
+                  : undefined,
+              background:
+                theme === value ? "var(--surface-2)" : "transparent",
             }}
           >
             <div className="flex items-center gap-3">
@@ -123,9 +144,9 @@ export default function SettingsTab() {
         ))}
       </div>
 
-      {/* ── Support ───────────────────────────────── */}
-      <p className="section-label">Support</p>
-      <div className="rounded-2xl overflow-hidden mb-5" style={cardStyle}>
+      {/* ── Support ──────────────────────────────── */}
+      <span style={sectionLabel}>Support</span>
+      <div style={card}>
         <button
           onClick={openSupport}
           type="button"
@@ -143,15 +164,17 @@ export default function SettingsTab() {
         </button>
       </div>
 
-      {/* ── About ─────────────────────────────────── */}
-      <div className="rounded-2xl px-5 py-4 mb-5" style={cardStyle}>
-        <div className="flex items-center justify-between">
-          <span className="text-sm font-medium" style={{ color: "var(--text-main)" }}>Version</span>
+      {/* ── About ────────────────────────────────── */}
+      <div style={card}>
+        <div className="flex items-center justify-between px-5 py-4">
+          <span className="text-sm font-medium" style={{ color: "var(--text-main)" }}>
+            Version
+          </span>
           <span className="text-sm" style={{ color: "var(--text-muted)" }}>1.0.0</span>
         </div>
       </div>
 
-      {/* ── Footer ────────────────────────────────── */}
+      {/* ── Footer ───────────────────────────────── */}
       <p className="text-center text-xs mt-6" style={{ color: "var(--text-muted)" }}>
         Brought to you by{" "}
         <span className="font-bold" style={{ color: "#f2b70a" }}>Bossly Co.</span>
@@ -159,18 +182,6 @@ export default function SettingsTab() {
       <p className="text-center text-xs mt-1" style={{ color: "var(--text-muted)" }}>
         Ghana House Agent · All rights reserved
       </p>
-
-      <style jsx>{`
-        .section-label {
-          font-size: 11px;
-          font-weight: 800;
-          text-transform: uppercase;
-          letter-spacing: 0.1em;
-          color: var(--text-muted);
-          padding: 0 4px;
-          margin-bottom: 8px;
-        }
-      `}</style>
     </div>
   );
 }
