@@ -12,6 +12,8 @@ export type PropertyUnit = {
   available:   boolean;
   description: string | null;
   position:    number;
+  quantity:    number;      // ← add
+  isVisible:   boolean;     // ← add
 };
 
 export type TourSceneDto = {

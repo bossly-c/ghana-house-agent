@@ -10,9 +10,13 @@ import ProfileTab from "@/components/ProfileTab";
 import SettingsTab from "@/components/SettingsTab";
 import AuthModal from "@/components/AuthModal";
 import NavigationPage from "@/components/NavigationPage";
+import SearchOverlay from "@/components/SearchOverlay";
+import ParameterSearchPage from "@/components/ParameterSearchPage";
+import SearchResultsPage from "@/components/SearchResultsPage";
 import type { PropertyListItem, PropertyFilters } from "@/lib/types";
+import type { PropertySearchParams } from "@/components/SearchOverlay";
 import { distanceMetres } from "@/lib/geo";
-import { SlidersHorizontal, Plus, Search, X } from "lucide-react";
+import { SlidersHorizontal, Plus, Search } from "lucide-react";
 import Link from "next/link";
 import { useBackButton } from "@/hooks/useBackButton";
 
@@ -20,21 +24,18 @@ const MapView = dynamic(() => import("@/components/MapView"), { ssr: false });
 
 interface Props { initial?: PropertyListItem[] }
 
-interface NominatimResult {
-  place_id:     number;
-  display_name: string;
-  lat:          string;
-  lon:          string;
-}
-
-/* ══════════════════════════════════════════════════
+/* ══════════════════════════════════════
    Splash
-══════════════════════════════════════════════════ */
+══════════════════════════════════════ */
 function Splash() {
   return (
     <div
-      className="fixed inset-0 flex flex-col items-center justify-center bg-white dark:bg-zinc-950 z-[9999]"
-      style={{ paddingTop: "env(safe-area-inset-top)", paddingBottom: "env(safe-area-inset-bottom)" }}
+      className="fixed inset-0 flex flex-col items-center justify-center z-[9999]"
+      style={{
+        background:    "var(--bg, white)",
+        paddingTop:    "env(safe-area-inset-top)",
+        paddingBottom: "env(safe-area-inset-bottom)",
+      }}
     >
       <div className="text-5xl mb-4">🏠</div>
       <h1 style={{ fontFamily: "var(--font-fraunces, Georgia, serif)", fontWeight: 700, fontSize: "1.8rem", color: "#059669" }}>
@@ -45,28 +46,32 @@ function Splash() {
   );
 }
 
-/* ══════════════════════════════════════════════════
+/* ══════════════════════════════════════
    Auth gate
-══════════════════════════════════════════════════ */
+══════════════════════════════════════ */
 function AuthGate() {
   const [showAuth, setShowAuth] = useState(false);
   return (
     <div
-      className="fixed inset-0 flex flex-col items-center justify-center bg-white dark:bg-zinc-950 z-[9999] px-8 gap-6"
-      style={{ paddingTop: "env(safe-area-inset-top)", paddingBottom: "env(safe-area-inset-bottom)" }}
+      className="fixed inset-0 flex flex-col items-center justify-center z-[9999] px-8 gap-6"
+      style={{
+        background:    "var(--bg, white)",
+        paddingTop:    "env(safe-area-inset-top)",
+        paddingBottom: "env(safe-area-inset-bottom)",
+      }}
     >
       <div className="text-center">
         <h1 style={{ fontFamily: "var(--font-fraunces, Georgia, serif)", fontWeight: 700, fontSize: "2.2rem", color: "#059669", lineHeight: 1.1 }}>
           Ghana House Agent
         </h1>
-        <p className="text-zinc-500 dark:text-zinc-400 text-sm mt-1">
+        <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>
           Find &amp; list properties across Ghana
         </p>
       </div>
       <div className="w-28 h-28 rounded-3xl bg-emerald-50 dark:bg-emerald-900/30 flex items-center justify-center text-6xl shadow-inner">
         🏠
       </div>
-      <p className="text-zinc-600 dark:text-zinc-400 text-center text-sm leading-relaxed">
+      <p className="text-sm text-center leading-relaxed" style={{ color: "var(--text-muted)" }}>
         Sign in or create an account to browse listings, save favourites, and list your property.
       </p>
       <button
@@ -81,9 +86,9 @@ function AuthGate() {
   );
 }
 
-/* ══════════════════════════════════════════════════
+/* ══════════════════════════════════════
    Main export
-══════════════════════════════════════════════════ */
+══════════════════════════════════════ */
 export default function HomeClient({ initial }: Props) {
   const { user, loading } = useAuth();
   if (loading) return <Splash />;
@@ -91,9 +96,9 @@ export default function HomeClient({ initial }: Props) {
   return <AppShell initial={initial} />;
 }
 
-/* ══════════════════════════════════════════════════
+/* ══════════════════════════════════════
    App shell
-══════════════════════════════════════════════════ */
+══════════════════════════════════════ */
 function AppShell({ initial }: Props) {
   const [properties,   setProperties]   = useState<PropertyListItem[]>(initial ?? []);
   const [selectedId,   setSelectedId]   = useState<string | null>(null);
@@ -105,15 +110,18 @@ function AppShell({ initial }: Props) {
   const [navigatingTo, setNavigatingTo] = useState<{ name: string; lat: number; lng: number } | null>(null);
 
   /* ── Search state ── */
-  const [searchOpen,    setSearchOpen]    = useState(false);
-  const [searchQuery,   setSearchQuery]   = useState("");
-  const [searchResults, setSearchResults] = useState<NominatimResult[]>([]);
-  const [searching,     setSearching]     = useState(false);
-  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [searchOpen,        setSearchOpen]        = useState(false);   // compact overlay
+  const [paramSearchOpen,   setParamSearchOpen]   = useState(false);   // full-screen form
+  const [searchResults,     setSearchResults]     = useState<PropertyListItem[] | null>(null);
+  const [searchResultsOpen, setSearchResultsOpen] = useState(false);   // full-screen results
+  const [lastParams,        setLastParams]        = useState<PropertySearchParams>({});
+
+  /* Profile tab sub-section — lifted for back-button control */
+  const [profileSection, setProfileSection] = useState<"info" | "listings">("info");
 
   const notifiedRef = useRef<Set<string>>(new Set());
 
-  /* ── Fetch properties ── */
+  /* ── Fetch map properties ── */
   const fetchProps = useCallback(async () => {
     const params = new URLSearchParams();
     if (filters.listing) params.set("listing", filters.listing);
@@ -129,38 +137,39 @@ function AppShell({ initial }: Props) {
 
   useEffect(() => {
     fetchProps();
-    const interval = setInterval(fetchProps, 30_000);
-    return () => clearInterval(interval);
+    const id = setInterval(fetchProps, 30_000);
+    return () => clearInterval(id);
   }, [fetchProps]);
 
-  /* ── Nominatim search (debounced 500ms) ── */
-  useEffect(() => {
-    if (!searchQuery.trim()) { setSearchResults([]); return; }
-    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
-    searchTimerRef.current = setTimeout(async () => {
-      setSearching(true);
-      try {
-        const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery + " Ghana")}&limit=6&countrycodes=gh`;
-        const res  = await fetch(url, { headers: { "Accept-Language": "en" } });
-        const data: NominatimResult[] = await res.json();
-        setSearchResults(data);
-      } catch {
-        setSearchResults([]);
-      } finally {
-        setSearching(false);
-      }
-    }, 500);
-    return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current); };
-  }, [searchQuery]);
+  /* ── Parameter search → fetch results ── */
+  const handleDatabaseSearch = useCallback(async (params: PropertySearchParams) => {
+    setLastParams(params);
+    setParamSearchOpen(false); // close the form page
 
-  /* ── Close search when a house is selected ── */
-  useEffect(() => {
-    if (selectedId) {
-      setSearchOpen(false);
-      setSearchQuery("");
+    const qs = new URLSearchParams();
+    if (params.area)     qs.set("area",     params.area);
+    if (params.type)     qs.set("type",     params.type ?? "");
+    if (params.listing)  qs.set("listing",  params.listing);
+    if (params.minPrice) qs.set("minPrice", params.minPrice);
+    if (params.maxPrice) qs.set("maxPrice", params.maxPrice);
+
+    try {
+      const r = await fetch(`/api/properties?${qs}`);
+      const d = await r.json();
+      setSearchResults(Array.isArray(d?.properties) ? d.properties : []);
+    } catch {
       setSearchResults([]);
     }
-  }, [selectedId]);
+    setSearchResultsOpen(true);
+  }, []);
+
+  /* ── Select a house from the results list ── */
+  const handleSelectFromResults = useCallback((id: string) => {
+    setSearchResultsOpen(false);
+    setSearchOpen(false);
+    setSelectedId(id);
+    setTab("map");
+  }, []);
 
   /* ── Geofence notifications ── */
   const handleUserLocation = useCallback(async (lat: number, lng: number) => {
@@ -169,18 +178,13 @@ function AppShell({ initial }: Props) {
     if (localStorage.getItem("gha_notif") !== "true") return;
     const { LocalNotifications } = await import("@capacitor/local-notifications");
     for (const p of properties) {
-      if (p.lat === null || p.lng === null) continue;
+      if (p.lat == null || p.lng == null) continue;
       const sid = String(p.id);
       if (notifiedRef.current.has(sid)) continue;
-      const d = distanceMetres(lat, lng, p.lat!, p.lng!);
-      if (d <= 300) {
+      if (distanceMetres(lat, lng, p.lat, p.lng) <= 300) {
         notifiedRef.current.add(sid);
         await LocalNotifications.schedule({
-          notifications: [{
-            id:    Number(p.id),
-            title: "Nearby Property 🏠",
-            body:  `${p.title} is within 300 m of you!`,
-          }],
+          notifications: [{ id: Number(p.id), title: "Nearby Property 🏠", body: `${p.title} is within 300 m of you!` }],
         });
       }
     }
@@ -193,61 +197,68 @@ function AppShell({ initial }: Props) {
     setNavigatingTo(dest);
   }, []);
 
-  function pickSearchResult(r: NominatimResult) {
-    setFlyToSignal({ lat: parseFloat(r.lat), lng: parseFloat(r.lon), zoom: 14 });
-    setSearchQuery(r.display_name.split(",")[0]);
-    setSearchResults([]);
-    setSearchOpen(false);
-  }
-
-  function closeSearch() {
-    setSearchOpen(false);
-    setSearchQuery("");
-    setSearchResults([]);
-  }
+  /* ── Close search overlay when a house is tapped on the map ── */
+  useEffect(() => {
+    if (selectedId) { setSearchOpen(false); setParamSearchOpen(false); }
+  }, [selectedId]);
 
   /* ══════════════════════════════════════════════════
      Back button priority stack
-     40 = search overlay open
-     30 = navigation page
-     20 = property sheet
-     10 = non-map tab → go to map
-      0 = map root → double-tap exits (handled by hook system)
+     70 – search results page
+     60 – parameter search form
+     50 – compact search overlay
+     40 – navigation page
+     30 – property sheet
+     21 – profile → listings sub-section
+     20 – non-map tab → map
+      0 – map root → double-tap exit
   ══════════════════════════════════════════════════ */
 
-  // Priority 40 — Search overlay
   useBackButton(
-    searchOpen,
-    useCallback(() => closeSearch(), []),
-    "search-overlay",
-    40
+    searchResultsOpen,
+    useCallback(() => setSearchResultsOpen(false), []),
+    "search-results", 70
   );
 
-  // Priority 30 — Navigation page
+  useBackButton(
+    paramSearchOpen,
+    useCallback(() => setParamSearchOpen(false), []),
+    "param-search", 60
+  );
+
+  useBackButton(
+    searchOpen,
+    useCallback(() => setSearchOpen(false), []),
+    "search-overlay", 50
+  );
+
   useBackButton(
     !!navigatingTo,
     useCallback(() => setNavigatingTo(null), []),
-    "navigation-page",
-    30
+    "navigation-page", 40
   );
 
-  // Priority 20 — Property sheet
   useBackButton(
     !!selectedId,
     useCallback(() => setSelectedId(null), []),
-    "property-sheet",
-    20
+    "property-sheet", 30
   );
 
-  // Priority 10 — Non-map tab → return to map first
   useBackButton(
-    tab !== "map" && !selectedId && !navigatingTo && !searchOpen,
-    useCallback(() => setTab("map"), []),
-    "tab-switch",
-    10
+    tab === "profile" && profileSection === "listings" &&
+      !selectedId && !navigatingTo && !searchOpen && !paramSearchOpen && !searchResultsOpen,
+    useCallback(() => setProfileSection("info"), []),
+    "profile-listings", 21
   );
 
-  /* ── Full-screen navigation overlay ── */
+  useBackButton(
+    tab !== "map" && !selectedId && !navigatingTo && !searchOpen && !paramSearchOpen && !searchResultsOpen &&
+      !(tab === "profile" && profileSection === "listings"),
+    useCallback(() => setTab("map"), []),
+    "tab-switch", 20
+  );
+
+  /* ── Navigation full-screen ── */
   if (navigatingTo) {
     return (
       <NavigationPage
@@ -258,16 +269,21 @@ function AppShell({ initial }: Props) {
     );
   }
 
-  /* ── Whether we are "inside" a house (sheet open) ── */
   const sheetOpen = !!selectedId;
 
   return (
-    <div className="fixed inset-0 flex flex-col bg-zinc-100 dark:bg-zinc-950">
+    <div className="fixed inset-0 flex flex-col" style={{ background: "var(--bg, #f4f4f5)" }}>
 
-      {/* ── App name header ── */}
+      {/* Header */}
       <header
-        className="flex-none bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 flex items-center gap-2 px-4"
-        style={{ paddingTop: "calc(env(safe-area-inset-top) + 12px)", paddingBottom: "12px", zIndex: 999 }}
+        className="flex-none flex items-center gap-2 px-4"
+        style={{
+          paddingTop:    "calc(env(safe-area-inset-top) + 12px)",
+          paddingBottom: "12px",
+          background:    "var(--surface, white)",
+          borderBottom:  "1px solid var(--border-col, #e4e4e7)",
+          zIndex:        999,
+        }}
       >
         <h1
           className="flex-1 tracking-tight"
@@ -276,19 +292,20 @@ function AppShell({ initial }: Props) {
           Ghana House Agent
         </h1>
 
-        {/* Search button — only on map tab AND only when no sheet is open */}
+        {/* Search button — map tab only, no sheet */}
         {tab === "map" && !sheetOpen && (
           <button
             onClick={() => setSearchOpen(o => !o)}
-            className="w-10 h-10 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center"
-            aria-label="Search location"
+            className="w-10 h-10 rounded-full flex items-center justify-center"
+            style={{ background: "var(--surface-2, #f4f4f5)" }}
+            aria-label="Search"
           >
-            <Search size={17} className="text-zinc-600 dark:text-zinc-300" />
+            <Search size={17} style={{ color: "var(--text-muted)" }} />
           </button>
         )}
       </header>
 
-      {/* ── Content area ── */}
+      {/* Content */}
       <main className="flex-1 relative overflow-hidden">
 
         {/* MAP TAB */}
@@ -306,63 +323,29 @@ function AppShell({ initial }: Props) {
             hideControls={sheetOpen}
           />
 
-          {/* Search overlay — hidden when sheet is open */}
+          {/* Compact search overlay */}
           {searchOpen && !sheetOpen && (
-            <div className="absolute top-2 left-2 right-2 z-[600]">
-              <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl overflow-hidden border border-zinc-200 dark:border-zinc-700">
-                <div className="flex items-center gap-2 px-3 py-2">
-                  <Search size={16} className="text-zinc-400 flex-none" />
-                  <input
-                    autoFocus
-                    type="text"
-                    placeholder="Search any place in Ghana…"
-                    value={searchQuery}
-                    onChange={e => setSearchQuery(e.target.value)}
-                    className="flex-1 bg-transparent text-sm outline-none text-zinc-800 dark:text-zinc-100 placeholder:text-zinc-400"
-                  />
-                  {searching && (
-                    <span className="text-xs text-zinc-400 flex-none">Searching…</span>
-                  )}
-                  <button onClick={closeSearch}>
-                    <X size={16} className="text-zinc-400" />
-                  </button>
-                </div>
-
-                {searchResults.length > 0 && (
-                  <ul className="border-t border-zinc-100 dark:border-zinc-800 max-h-64 overflow-y-auto">
-                    {searchResults.map(r => (
-                      <li key={r.place_id}>
-                        <button
-                          onClick={() => pickSearchResult(r)}
-                          className="w-full text-left px-4 py-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800 border-b border-zinc-50 dark:border-zinc-800 last:border-0"
-                        >
-                          <span className="font-medium text-zinc-800 dark:text-zinc-100 block truncate">
-                            {r.display_name.split(",")[0]}
-                          </span>
-                          <span className="text-xs text-zinc-400 truncate block">
-                            {r.display_name.split(",").slice(1, 3).join(",")}
-                          </span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-
-                {searchQuery.trim() && !searching && searchResults.length === 0 && (
-                  <p className="px-4 py-3 text-sm text-zinc-400">No places found in Ghana</p>
-                )}
-              </div>
-            </div>
+            <SearchOverlay
+              onClose={() => setSearchOpen(false)}
+              onFlyTo={(lat, lng, zoom) => {
+                setFlyToSignal({ lat, lng, zoom });
+                setSearchOpen(false);
+              }}
+              onOpenParamSearch={() => {
+                setSearchOpen(false);      // close compact overlay first
+                setParamSearchOpen(true);  // open full-screen form
+              }}
+            />
           )}
 
-          {/* Filter chips — hidden when sheet or search is open */}
+          {/* Filter chips */}
           {!sheetOpen && !searchOpen && (
             <div className="absolute top-3 left-3 right-3 z-[500]">
               <FilterBar filters={filters} onChange={setFilters} />
             </div>
           )}
 
-          {/* List Property FAB — hidden when sheet is open */}
+          {/* List Property FAB */}
           {!sheetOpen && (
             <div
               className="absolute left-3 right-3 z-[500] flex justify-end"
@@ -390,7 +373,7 @@ function AppShell({ initial }: Props) {
         {/* PROFILE TAB */}
         {tab === "profile" && (
           <div className="absolute inset-0 overflow-y-auto" style={{ paddingBottom: "calc(60px + env(safe-area-inset-bottom))" }}>
-            <ProfileTab onRefresh={fetchProps} />
+            <ProfileTab onRefresh={fetchProps} section={profileSection} onSectionChange={setProfileSection} />
           </div>
         )}
 
@@ -402,13 +385,31 @@ function AppShell({ initial }: Props) {
         )}
       </main>
 
-      <TabBar active={tab} onChange={setTab} />
+      <TabBar active={tab} onChange={t => { setTab(t); setProfileSection("info"); }} />
 
       {selected && (
         <PropertySheet
           property={selected}
           onClose={() => setSelectedId(null)}
           onNavigate={handleNavigate}
+        />
+      )}
+
+      {/* Full-screen parameter search form — rendered outside main so it covers everything */}
+      {paramSearchOpen && (
+        <ParameterSearchPage
+          onBack={() => setParamSearchOpen(false)}
+          onSearch={handleDatabaseSearch}
+        />
+      )}
+
+      {/* Full-screen search results — rendered on top of everything */}
+      {searchResultsOpen && searchResults !== null && (
+        <SearchResultsPage
+          params={lastParams}
+          results={searchResults}
+          onBack={() => setSearchResultsOpen(false)}
+          onSelect={handleSelectFromResults}
         />
       )}
     </div>
@@ -419,7 +420,10 @@ function AppShell({ initial }: Props) {
 function FilterBar({ filters, onChange }: { filters: PropertyFilters; onChange: (f: PropertyFilters) => void }) {
   return (
     <div className="flex gap-2 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
-      <button className="flex-none flex items-center gap-1 bg-white dark:bg-zinc-800 px-3 py-1.5 rounded-full shadow text-xs font-medium text-zinc-700 dark:text-zinc-200">
+      <button
+        className="flex-none flex items-center gap-1 px-3 py-1.5 rounded-full shadow text-xs font-medium"
+        style={{ background: "var(--surface, white)", color: "var(--text-muted)" }}
+      >
         <SlidersHorizontal size={13} /> Filter
       </button>
       {(["rent", "sale"] as const).map(l => (
@@ -428,8 +432,8 @@ function FilterBar({ filters, onChange }: { filters: PropertyFilters; onChange: 
           onClick={() => onChange({ ...filters, listing: filters.listing === l ? undefined : l })}
           className="flex-none px-3 py-1.5 rounded-full shadow text-xs font-medium capitalize transition-colors"
           style={{
-            background: filters.listing === l ? "#059669" : "white",
-            color:      filters.listing === l ? "white"    : "#3f3f46",
+            background: filters.listing === l ? "#059669" : "var(--surface, white)",
+            color:      filters.listing === l ? "white"    : "var(--text-muted)",
           }}
         >
           {l === "rent" ? "🔴 Rent" : "🟢 Sale"}

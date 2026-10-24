@@ -9,12 +9,12 @@ type BackHandler = {
   timestamp: number;
 };
 
-const _handlerStack: BackHandler[] = [];
-let _lastBackPress               = 0;
+const _handlerStack: BackHandler[]                     = [];
+let _lastBackPress                                     = 0;
 let _historyCheckInterval: ReturnType<typeof setInterval> | null = null;
-let _nativeListenerRegistered    = false;
-let _suppressUntil               = 0;
-let _onRootBackPress: (() => void) | null = null;
+let _nativeListenerRegistered                          = false;
+let _suppressUntil                                     = 0;
+let _onRootBackPress: (() => void) | null              = null;
 
 export function suppressBackButton(duration = 500): void {
   _suppressUntil = Date.now() + duration;
@@ -39,7 +39,9 @@ function ensureHistoryEntry() {
 function getTopHandler(): BackHandler | null {
   if (_handlerStack.length === 0) return null;
   return [..._handlerStack].sort((a, b) =>
-    b.priority !== a.priority ? b.priority - a.priority : b.timestamp - a.timestamp
+    b.priority !== a.priority
+      ? b.priority - a.priority
+      : b.timestamp - a.timestamp
   )[0];
 }
 
@@ -47,8 +49,8 @@ function showExitToast() {
   document.getElementById("gha-exit-toast")?.remove();
 
   if (!document.getElementById("gha-toast-styles")) {
-    const s = document.createElement("style");
-    s.id = "gha-toast-styles";
+    const s    = document.createElement("style");
+    s.id       = "gha-toast-styles";
     s.textContent = `
       @keyframes gha-toast-fade {
         0%   { opacity:0; transform:translateX(-50%) translateY(16px) scale(.92); }
@@ -59,9 +61,9 @@ function showExitToast() {
     document.head.appendChild(s);
   }
 
-  const toast = document.createElement("div");
-  toast.id = "gha-exit-toast";
-  toast.textContent = "Press back again to exit";
+  const toast        = document.createElement("div");
+  toast.id           = "gha-exit-toast";
+  toast.textContent  = "Press back again to exit";
   toast.style.cssText = `
     position:fixed; bottom:110px; left:50%;
     transform:translateX(-50%);
@@ -95,9 +97,9 @@ function handleBackPress(): boolean {
   const now = Date.now();
   if (now - _lastBackPress < 2000) {
     if (Capacitor.isNativePlatform()) {
-      import("@capacitor/app").then(({ App }) => App.exitApp()).catch(() => {
-        (navigator as any).app?.exitApp?.();
-      });
+      import("@capacitor/app")
+        .then(({ App }) => App.exitApp())
+        .catch(() => { (navigator as any).app?.exitApp?.(); });
     }
     return true;
   }
@@ -127,7 +129,7 @@ async function registerNativeBackButton() {
   }
 }
 
-// Bootstrap once on module load
+// ── Bootstrap once on module load ────────────────────────────────────────────
 if (typeof window !== "undefined") {
   window.addEventListener("popstate", handlePopState);
 
@@ -153,42 +155,60 @@ if (typeof window !== "undefined") {
   window.addEventListener("focus", ensureHistoryEntry);
 }
 
-/* ── Main hook ── */
+// ── Main hook ─────────────────────────────────────────────────────────────────
+/**
+ * Register a back-button handler with a given priority.
+ *
+ * Only the HIGHEST-PRIORITY active handler fires when back is pressed.
+ *
+ * Priority guide used across AppShell:
+ *   60 – search results page
+ *   50 – search overlay
+ *   40 – navigation page
+ *   30 – property sheet
+ *   21 – profile tab → listings sub-section
+ *   20 – any non-map tab → go to map
+ *    0 – map root → double-tap to exit (handled inside handleBackPress)
+ */
 export function useBackButton(
   isActive:  boolean,
   onBack:    () => void,
   screenKey: string,
-  priority   = 10
+  priority   = 10,
 ): void {
-  const onBackRef   = useRef(onBack);
-  const priorityRef = useRef(priority);
-  const isActiveRef = useRef(isActive);
+  // Keep latest callback in a ref so we never need to re-register
+  const onBackRef    = useRef(onBack);
+  const priorityRef  = useRef(priority);
+  const isActiveRef  = useRef(isActive);
 
-  useEffect(() => { onBackRef.current = onBack; }, [onBack]);
+  // Always keep refs current
+  useEffect(() => { onBackRef.current   = onBack;    }, [onBack]);
+  useEffect(() => { priorityRef.current = priority;  }, [priority]);
+  useEffect(() => { isActiveRef.current = isActive;  }, [isActive]);
 
+  // Sync priority changes into the stack without re-registering
   useEffect(() => {
-    priorityRef.current = priority;
     const existing = _handlerStack.find(h => h.key === screenKey);
     if (existing) existing.priority = priority;
   }, [priority, screenKey]);
 
+  // Register / unregister based on isActive
   useEffect(() => {
-    isActiveRef.current = isActive;
-
     if (!isActive) {
+      // Remove from stack when inactive
       const idx = _handlerStack.findIndex(h => h.key === screenKey);
       if (idx !== -1) _handlerStack.splice(idx, 1);
       return;
     }
 
-    // Replace any existing entry for this key
+    // Replace any stale entry for this key
     const existingIdx = _handlerStack.findIndex(h => h.key === screenKey);
     if (existingIdx !== -1) _handlerStack.splice(existingIdx, 1);
 
     _handlerStack.push({
-      key:      screenKey,
-      priority: priorityRef.current,
-      callback: () => { if (isActiveRef.current) onBackRef.current(); },
+      key:       screenKey,
+      priority:  priorityRef.current,
+      callback:  () => { if (isActiveRef.current) onBackRef.current(); },
       timestamp: Date.now(),
     });
 
@@ -198,14 +218,16 @@ export function useBackButton(
       const idx = _handlerStack.findIndex(h => h.key === screenKey);
       if (idx !== -1) _handlerStack.splice(idx, 1);
     };
+  // screenKey is the stable identity — only re-run when active state flips
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isActive, screenKey]);
 }
 
-/* ── Convenience wrapper for full-screen pages ── */
+// ── Convenience wrapper for always-mounted full-screen pages ─────────────────
 export function useBackButtonPage(
   onBack:    () => void,
   screenKey: string,
-  priority   = 10
+  priority   = 10,
 ): void {
   useBackButton(true, onBack, screenKey, priority);
 }

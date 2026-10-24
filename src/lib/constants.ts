@@ -31,7 +31,7 @@ export const GHANA_REGIONS = [
 export const PROPERTY_TYPES = [
   "Single Room Self-Contain",
   "Room & Chamber",
-  "Chamber & Hall Self-Contain",
+  "Chamber & Hall",
   "1 Bedroom Apartment",
   "2 Bedroom Apartment",
   "3 Bedroom Apartment",
@@ -39,6 +39,10 @@ export const PROPERTY_TYPES = [
   "3 Bedroom House",
   "4+ Bedroom House",
   "Compound House",
+  "Warehouse",
+  "Duplex",
+  "Bungalow",
+  "Mansion",
   "Storey Building",
   "Hostel Room",
 ];

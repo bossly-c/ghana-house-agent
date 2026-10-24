@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, ilike, lte, or, sql } from "drizzle-orm";
+import { SQL, and, asc, desc, eq, gte, ilike, lte, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   agents,
@@ -20,7 +20,6 @@ type PropertyRow = typeof properties.$inferSelect;
 type AgentRow    = typeof agents.$inferSelect;
 
 // ── Map DB row → PropertyListItem ─────────────────────────────────
-// PropertyListItem has no agent fields — no join needed for list view
 function toListItem(p: PropertyRow): PropertyListItem {
   return {
     id:           p.id,
@@ -28,22 +27,22 @@ function toListItem(p: PropertyRow): PropertyListItem {
     propertyType: p.propertyType,
     region:       p.region,
     address:      p.address ?? "",
-    area:         p.area,             // ← schema column "area" exists
-    city:         p.city,             // ← schema column "city" exists
+    area:         p.area,
+    city:         p.city,
     title:        p.title,
     lat:          p.lat,
     lng:          p.lng,
     price:        p.price,
     pricePeriod:  p.pricePeriod,
-    beds:         p.bedrooms,         // ← schema: "bedrooms" → type: "beds"
-    baths:        p.bathrooms,        // ← schema: "bathrooms" → type: "baths"
-    photos:       (p.images as string[]) ?? [],  // ← schema column is "images"
+    beds:         p.bedrooms,
+    baths:        p.bathrooms,
+    photos:       (p.images as string[]) ?? [],
     isCompound:   p.isCompound,
     createdAt:    p.createdAt.toISOString(),
   };
 }
 
-// ── Map agent row + property row → PropertyDetail agent fields ────
+// ── Map agent row → agent fields ──────────────────────────────────
 function agentFields(a: AgentRow) {
   return {
     agentName:     a.name,
@@ -56,9 +55,10 @@ function agentFields(a: AgentRow) {
 export async function listProperties(
   filters: PropertyFilters = {}
 ): Promise<PropertyListItem[]> {
-  const conditions: ReturnType<typeof eq>[] = [];
+  // ✅ Use SQL[] so gte / lte / or are all accepted
+  const conditions: SQL[] = [];
 
-  // ✅ Always hide invisible properties from the map
+  // Always hide invisible properties from the map
   conditions.push(eq(properties.isVisible, true));
 
   if (filters.listing) {
@@ -113,7 +113,6 @@ export async function searchProperties(q: string): Promise<PropertyListItem[]> {
 
 // ── Single property detail ────────────────────────────────────────
 export async function getProperty(id: string): Promise<PropertyDetail | null> {
-  // Join agents to get agent contact info
   const rows = await db
     .select({ p: properties, a: agents })
     .from(properties)
@@ -151,11 +150,12 @@ export async function getProperty(id: string): Promise<PropertyDetail | null> {
       available:   u.available,
       description: u.description ?? null,
       position:    u.position,
+      quantity:    u.quantity,    // ✅ was missing
+      isVisible:   u.isVisible,   // ✅ was missing
     }));
   }
 
   // fetch tour scenes
-  // ← schema columns: name, orderIndex (not roomName, position)
   const sceneRows = await db
     .select()
     .from(tourScenes)
@@ -164,47 +164,47 @@ export async function getProperty(id: string): Promise<PropertyDetail | null> {
 
   const scenes: TourSceneDto[] = sceneRows.map((s) => ({
     id:       s.id,
-    roomName: s.name,          // ← schema: "name" → type: "roomName"
+    roomName: s.name,
     panoUrl:  s.panoUrl,
-    position: s.orderIndex,    // ← schema: "orderIndex" → type: "position"
+    position: s.orderIndex,
   }));
 
-  const photos = (p.images as string[]) ?? [];   // ← schema column is "images"
-  const viewingDays = (p.viewingDays as string[]) ?? [];
-  const viewingTime = p.viewingTime ?? "08:00 – 18:00";
+  const photos       = (p.images      as string[]) ?? [];
+  const viewingDays  = (p.viewingDays as string[]) ?? [];
+  const viewingTime  = p.viewingTime  ?? "08:00 – 18:00";
 
-    return {
-    id:           p.id,
-    listingType:  p.listingType as ListingType,
-    propertyType: p.propertyType,
-    region:       p.region,
-    address:      p.address ?? "",
-    area:         p.area,
-    city:         p.city,
-    title:        p.title,
-    description:  p.description ?? null,
-    lat:          p.lat,
-    lng:          p.lng,
-    beds:         p.bedrooms,
-    baths:        p.bathrooms,
-    halls:        p.halls,
-    price:        p.price,
-    pricePeriod:  p.pricePeriod,
-    amenities:    (p.amenities as string[]) ?? [],
+  return {
+    id:             p.id,
+    listingType:    p.listingType as ListingType,
+    propertyType:   p.propertyType,
+    region:         p.region,
+    address:        p.address ?? "",
+    area:           p.area,
+    city:           p.city,
+    title:          p.title,
+    description:    p.description ?? null,
+    lat:            p.lat,
+    lng:            p.lng,
+    beds:           p.bedrooms,
+    baths:          p.bathrooms,
+    halls:          p.halls,
+    price:          p.price,
+    pricePeriod:    p.pricePeriod,
+    amenities:      (p.amenities as string[]) ?? [],
     photos,
-    images:       photos,
+    images:         photos,
     availableDays:  viewingDays,
     availableFrom:  "08:00",
     availableTo:    "18:00",
     viewingDays,
     viewingTime,
     ...agentFields(a),
-    views:        p.views,
-    isCompound:   p.isCompound,
-    isVisible:    p.isVisible,   // ← ADD THIS LINE
+    views:          p.views,
+    isCompound:     p.isCompound,
+    isVisible:      p.isVisible,
     units,
     scenes,
-    createdAt:    p.createdAt.toISOString(),
+    createdAt:      p.createdAt.toISOString(),
   };
 }
 

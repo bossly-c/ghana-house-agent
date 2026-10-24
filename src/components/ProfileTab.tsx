@@ -1,20 +1,20 @@
 "use client";
-import { useState } from "react";
 import { User, LogOut, LogIn } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { useState } from "react";
 import AuthModal from "./AuthModal";
 import MyListings from "./MyListings";
 
 interface ProfileTabProps {
-  onRefresh?: () => void;
+  onRefresh?:      () => void;
+  section:         "info" | "listings";
+  onSectionChange: (s: "info" | "listings") => void;
 }
 
-export default function ProfileTab({ onRefresh }: ProfileTabProps) {
+export default function ProfileTab({ onRefresh, section, onSectionChange }: ProfileTabProps) {
   const { user, logout } = useAuth();
   const [showAuth, setShowAuth] = useState(false);
-  const [section,  setSection]  = useState<"info" | "listings">("info");
 
-  // Read token from localStorage for API calls
   const token =
     typeof window !== "undefined"
       ? localStorage.getItem("gha_token") ?? ""
@@ -32,13 +32,12 @@ export default function ProfileTab({ onRefresh }: ProfileTabProps) {
         <div>
           <h2
             className="font-display text-2xl font-bold"
-            style={{ color: "var(--text-main)" }}
+            style={{ color: "var(--text-main)", fontFamily: "var(--font-fraunces, Georgia, serif)" }}
           >
             Ghana House Agent
           </h2>
           <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--text-muted)" }}>
-            Sign in to save listings, list your property, and get personalised
-            nearby alerts.
+            Sign in to save listings, list your property, and get personalised nearby alerts.
           </p>
         </div>
         <button
@@ -55,28 +54,36 @@ export default function ProfileTab({ onRefresh }: ProfileTabProps) {
   }
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
+    <div className="flex flex-col" style={{ minHeight: "100%" }}>
       {/* Avatar + name */}
       <div className="flex flex-col items-center gap-2 pt-7 pb-4 px-5">
         {user.avatar ? (
           <img
             src={user.avatar}
-            className="w-20 h-20 rounded-full object-cover border-4 border-[#f2b70a]"
+            className="w-20 h-20 rounded-full object-cover"
+            style={{ border: "4px solid #f2b70a" }}
             alt="profile"
           />
         ) : (
           <div
-            className="w-20 h-20 rounded-full flex items-center justify-center border-4 border-[#f2b70a]"
-            style={{ background: "#0c3b2e" }}
+            className="w-20 h-20 rounded-full flex items-center justify-center"
+            style={{ background: "#0c3b2e", border: "4px solid #f2b70a" }}
           >
-            <span className="font-display text-3xl font-bold" style={{ color: "#f2b70a" }}>
+            <span
+              style={{
+                fontFamily: "var(--font-fraunces, Georgia, serif)",
+                fontSize:   "1.875rem",
+                fontWeight: 700,
+                color:      "#f2b70a",
+              }}
+            >
               {user.name.charAt(0).toUpperCase()}
             </span>
           </div>
         )}
         <h2
-          className="font-display text-xl font-bold"
-          style={{ color: "var(--text-main)" }}
+          className="text-xl font-bold"
+          style={{ color: "var(--text-main)", fontFamily: "var(--font-fraunces, Georgia, serif)" }}
         >
           {user.name}
         </h2>
@@ -86,17 +93,19 @@ export default function ProfileTab({ onRefresh }: ProfileTabProps) {
       </div>
 
       {/* Segment control */}
-      <div className="flex mx-5 mb-4 rounded-2xl overflow-hidden border"
-        style={{ borderColor: "var(--border-col)", background: "var(--surface-2)" }}>
-        {(["info", "listings"] as const).map((s) => (
+      <div
+        className="flex mx-5 mb-4 rounded-2xl overflow-hidden border"
+        style={{ borderColor: "var(--border-col)", background: "var(--surface-2)" }}
+      >
+        {(["info", "listings"] as const).map(s => (
           <button
             key={s}
             type="button"
-            onClick={() => setSection(s)}
+            onClick={() => onSectionChange(s)}
             className="flex-1 py-2.5 text-xs font-extrabold uppercase tracking-wide transition"
             style={{
-              background: section === s ? "#0c3b2e" : "transparent",
-              color:      section === s ? "#f2b70a"  : "var(--text-muted)",
+              background:   section === s ? "#0c3b2e" : "transparent",
+              color:        section === s ? "#f2b70a"  : "var(--text-muted)",
               borderRadius: "0.875rem",
             }}
           >
@@ -106,7 +115,7 @@ export default function ProfileTab({ onRefresh }: ProfileTabProps) {
       </div>
 
       {/* Scrollable content */}
-      <div className="flex-1 overflow-y-auto thin-scroll px-5 pb-10">
+      <div className="flex-1 px-5 pb-10">
         {section === "info" && (
           <div className="space-y-3">
             {[
@@ -117,10 +126,7 @@ export default function ProfileTab({ onRefresh }: ProfileTabProps) {
               <div
                 key={label}
                 className="rounded-2xl px-5 py-4 flex justify-between items-center"
-                style={{
-                  background: "var(--surface)",
-                  border:     "1px solid var(--border-col)",
-                }}
+                style={{ background: "var(--surface)", border: "1px solid var(--border-col)" }}
               >
                 <span
                   className="text-xs font-extrabold uppercase tracking-wider"
@@ -145,7 +151,9 @@ export default function ProfileTab({ onRefresh }: ProfileTabProps) {
           </div>
         )}
 
-        {section === "listings" && <MyListings token={token} onRefresh={onRefresh} />}
+        {section === "listings" && (
+          <MyListings token={token} onRefresh={onRefresh} />
+        )}
       </div>
     </div>
   );
